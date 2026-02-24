@@ -32,6 +32,23 @@ def _marker_depths(names: List[str], marker_name: str) -> List[int]:
     return depths
 
 
+def _marker_roots(names: List[str], marker_name: str) -> List[str]:
+    roots = set()
+    for n in names:
+        if n == marker_name:
+            roots.add(".")
+        elif n.endswith(f"/{marker_name}"):
+            root = n[: -len(marker_name)].rstrip("/")
+            roots.add(root)
+    return sorted(roots)
+
+
+def _format_roots(roots: List[str]) -> str:
+    if not roots:
+        return "(none)"
+    return ", ".join(roots)
+
+
 def _read_manifest(zf: zipfile.ZipFile):
     manifest_candidates = [n for n in zf.namelist() if n.endswith("blender_manifest.toml")]
     if not manifest_candidates:
@@ -77,6 +94,9 @@ def diagnose_zip(zip_path: str) -> Report:
             init_depths = _marker_depths(names, "__init__.py")
             manifest_depths = _marker_depths(names, "blender_manifest.toml")
 
+            init_roots = _marker_roots(names, "__init__.py")
+            manifest_roots = _marker_roots(names, "blender_manifest.toml")
+
             has_init = bool(init_depths)
             has_manifest = bool(manifest_depths)
 
@@ -84,10 +104,18 @@ def diagnose_zip(zip_path: str) -> Report:
 
             if has_manifest:
                 min_depth = min(manifest_depths)
-                if min_depth > 1:
+                if min_depth > 0:
                     report.add(
                         "WARNING",
-                        "Manifest is nested too deep in ZIP (likely GitHub source ZIP). Re-zip so extension root contains blender_manifest.toml directly.",
+                        "Manifest is not at ZIP root. Blender extension installers often require blender_manifest.toml directly at root.",
+                    )
+                    report.add(
+                        "INFO",
+                        f"Detected manifest root candidate(s): {_format_roots(manifest_roots)}",
+                    )
+                    report.add(
+                        "INFO",
+                        "Fix hint: re-zip the extension folder contents so blender_manifest.toml is the first-level file in the ZIP.",
                     )
                 else:
                     report.add("OK", "Extension packaging depth looks installable")
@@ -99,6 +127,10 @@ def diagnose_zip(zip_path: str) -> Report:
                         "WARNING",
                         "Add-on __init__.py is nested too deep. Re-zip so addon folder (with __init__.py) is at ZIP root.",
                     )
+                    report.add(
+                        "INFO",
+                        f"Detected add-on root candidate(s): {_format_roots(init_roots)}",
+                    )
                 else:
                     report.add("OK", "Legacy add-on packaging depth looks installable")
 
@@ -106,6 +138,12 @@ def diagnose_zip(zip_path: str) -> Report:
                 report.add(
                     "WARNING",
                     "Both extension manifest and legacy __init__.py detected. Ensure you install through the intended path to avoid confusion.",
+                )
+
+            if not has_manifest and not has_init:
+                report.add(
+                    "ERROR",
+                    "Could not find blender_manifest.toml or __init__.py. This ZIP likely is source/docs, not an installable package.",
                 )
 
             if manifest is None:
