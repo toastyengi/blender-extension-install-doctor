@@ -7,8 +7,8 @@ from diagnostics_core import diagnose_zip
 
 
 class DiagnoseZipTests(unittest.TestCase):
-    def _zip_with(self, members):
-        tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    def _zip_with(self, members, name_suffix=".zip"):
+        tmp = tempfile.NamedTemporaryFile(suffix=name_suffix, delete=False)
         tmp.close()
         path = Path(tmp.name)
         with zipfile.ZipFile(path, "w") as zf:
@@ -38,6 +38,29 @@ class DiagnoseZipTests(unittest.TestCase):
         report = diagnose_zip(str(zpath))
         messages = [e.message for e in report.entries]
         self.assertTrue(any("Could not find blender_manifest.toml or __init__.py" in m for m in messages))
+
+    def test_source_archive_hint_for_nested_manifest(self):
+        zpath = self._zip_with(
+            {
+                "my-addon-main/blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n',
+            },
+            name_suffix="-main.zip",
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("source archive" in m.lower() for m in messages))
+
+    def test_source_archive_hint_when_no_markers(self):
+        zpath = self._zip_with(
+            {
+                "repo-main/README.md": "docs",
+                "repo-main/LICENSE": "MIT",
+            },
+            name_suffix="-master.zip",
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("repository source zip" in m.lower() for m in messages))
 
 
 if __name__ == "__main__":

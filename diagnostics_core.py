@@ -2,6 +2,7 @@ import os
 import zipfile
 import traceback
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List
 
 try:
@@ -47,6 +48,18 @@ def _format_roots(roots: List[str]) -> str:
     if not roots:
         return "(none)"
     return ", ".join(roots)
+
+
+def _looks_like_source_archive_name(zip_path: str) -> bool:
+    name = Path(zip_path).name.lower()
+    source_tokens = [
+        "-main.zip",
+        "-master.zip",
+        "source code",
+        "archive",
+        "refs-heads",
+    ]
+    return any(token in name for token in source_tokens)
 
 
 def _read_manifest(zf: zipfile.ZipFile):
@@ -117,6 +130,11 @@ def diagnose_zip(zip_path: str) -> Report:
                         "INFO",
                         "Fix hint: re-zip the extension folder contents so blender_manifest.toml is the first-level file in the ZIP.",
                     )
+                    if _looks_like_source_archive_name(zip_path):
+                        report.add(
+                            "INFO",
+                            "This looks like a source archive (e.g. GitHub/GitLab download ZIP). Prefer a release/install ZIP from the add-on author when available.",
+                        )
                 else:
                     report.add("OK", "Extension packaging depth looks installable")
 
@@ -131,6 +149,11 @@ def diagnose_zip(zip_path: str) -> Report:
                         "INFO",
                         f"Detected add-on root candidate(s): {_format_roots(init_roots)}",
                     )
+                    if _looks_like_source_archive_name(zip_path):
+                        report.add(
+                            "INFO",
+                            "This looks like a source archive (e.g. GitHub/GitLab download ZIP). If a Releases install ZIP exists, use that instead.",
+                        )
                 else:
                     report.add("OK", "Legacy add-on packaging depth looks installable")
 
@@ -145,6 +168,11 @@ def diagnose_zip(zip_path: str) -> Report:
                     "ERROR",
                     "Could not find blender_manifest.toml or __init__.py. This ZIP likely is source/docs, not an installable package.",
                 )
+                if _looks_like_source_archive_name(zip_path):
+                    report.add(
+                        "INFO",
+                        "Likely a repository source ZIP. In GitHub/GitLab, look for Releases assets or zip only the actual add-on folder before installing.",
+                    )
 
             if manifest is None:
                 report.add("WARNING", f"Extension manifest issue: {manifest_err}")

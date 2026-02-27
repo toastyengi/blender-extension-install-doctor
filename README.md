@@ -48,6 +48,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Tightened extension check: warns whenever `blender_manifest.toml` is not at ZIP root, with re-zip guidance.
 - Added marker-root candidate hints so users can quickly identify which folder should be re-zipped.
 - Added explicit install-path guidance (Extensions vs Add-ons) based on detected package type.
+- Added source-archive detection hints (`*-main.zip` / `*-master.zip` / archive-style names) to reduce GitHub/GitLab download confusion.
 - Split diagnosis engine into reusable `diagnostics_core.py` for easier testing and future CLI use.
 
 ## Next milestones
