@@ -62,6 +62,27 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("repository source zip" in m.lower() for m in messages))
 
+    def test_warns_for_multiple_addon_roots(self):
+        zpath = self._zip_with(
+            {
+                "addon_a/__init__.py": "bl_info = {}\n",
+                "addon_b/__init__.py": "bl_info = {}\n",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Multiple add-on roots detected" in m for m in messages))
+
+    def test_errors_when_current_blender_below_manifest_min(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="5.1.0"\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="5.0.1")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("lower than manifest blender_version_min" in m for m in messages))
+
 
 if __name__ == "__main__":
     unittest.main()

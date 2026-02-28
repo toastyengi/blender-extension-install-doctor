@@ -3,7 +3,7 @@ import zipfile
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 
 try:
     import tomllib
@@ -62,6 +62,20 @@ def _looks_like_source_archive_name(zip_path: str) -> bool:
     return any(token in name for token in source_tokens)
 
 
+def _parse_version_tuple(value: str) -> Optional[Tuple[int, ...]]:
+    if not value:
+        return None
+
+    parts = str(value).strip().split(".")
+    out = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            return None
+    return tuple(out) if out else None
+
+
 def _read_manifest(zf: zipfile.ZipFile):
     manifest_candidates = [n for n in zf.namelist() if n.endswith("blender_manifest.toml")]
     if not manifest_candidates:
@@ -82,7 +96,7 @@ def _read_manifest(zf: zipfile.ZipFile):
         return None, f"Manifest parse error: {e}"
 
 
-def diagnose_zip(zip_path: str) -> Report:
+def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
     report = Report()
 
     if not zip_path:
@@ -112,6 +126,24 @@ def diagnose_zip(zip_path: str) -> Report:
 
             has_init = bool(init_depths)
             has_manifest = bool(manifest_depths)
+
+            if len(manifest_roots) > 1:
+                report.add(
+                    "WARNING",
+                    "Multiple extension manifests detected in one ZIP. Blender expects a single install target package.",
+                )
+                report.add("INFO", f"Manifest root candidate(s): {_format_roots(manifest_roots)}")
+
+            if has_init and not has_manifest and len(init_roots) > 1:
+                report.add(
+                    "WARNING",
+                    "Multiple add-on roots detected (__init__.py in multiple folders). Install may fail or install the wrong package.",
+                )
+                report.add("INFO", f"Add-on root candidate(s): {_format_roots(init_roots)}")
+                report.add(
+                    "INFO",
+                    "Fix hint: create a ZIP containing only one intended add-on folder at root.",
+                )
 
             manifest, manifest_err = _read_manifest(zf)
 
@@ -205,6 +237,33 @@ def diagnose_zip(zip_path: str) -> Report:
                     report.add("WARNING", "Manifest missing blender_version_min")
                 else:
                     report.add("OK", f"blender_version_min = {blender_version_min}")
+
+                blender_version_max = manifest.get("blender_version_max")
+                if blender_version_max:
+                    report.add("OK", f"blender_version_max = {blender_version_max}")
+
+                if current_blender_version:
+                    current_v = _parse_version_tuple(current_blender_version)
+                    min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
+                    max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
+
+                    if current_v is None:
+                        report.add(
+                            "INFO",
+                            f"Could not parse current Blender version '{current_blender_version}' for compatibility check.",
+                        )
+                    else:
+                        report.add("INFO", f"Current Blender version (for check): {current_blender_version}")
+                        if min_v is not None and current_v < min_v:
+                            report.add(
+                                "ERROR",
+                                "Current Blender version is lower than manifest blender_version_min; installation/runtime issues are likely.",
+                            )
+                        if max_v is not None and current_v > max_v:
+                            report.add(
+                                "WARNING",
+                                "Current Blender version is higher than manifest blender_version_max; addon may be unsupported.",
+                            )
 
             if len(top_dirs) > 1:
                 report.add(

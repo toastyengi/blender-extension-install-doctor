@@ -32,7 +32,8 @@ class EID_OT_diagnose(bpy.types.Operator):
 
     def execute(self, context):
         props = context.scene.eid_props
-        findings = diagnose_zip(props.zip_path)
+        current_version = ".".join(str(v) for v in bpy.app.version[:3])
+        findings = diagnose_zip(props.zip_path, current_blender_version=current_version)
 
         coll = context.scene.eid_findings
         coll.clear()

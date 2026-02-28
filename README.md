@@ -12,6 +12,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Validate packaging depth to catch common install-path confusion:
   - warns if `blender_manifest.toml` is not at ZIP root (common GitHub/GitLab source ZIP mistake)
   - warns if `__init__.py` is nested too deep for legacy add-ons
+  - warns when multiple add-on roots or multiple manifests exist in one ZIP
   - shows detected marker root candidates to help users re-zip the correct folder
   - warns on mixed extension + legacy markers
 - Gives explicit install-path recommendation:
@@ -20,6 +21,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Validate some manifest basics:
   - required keys (`id`, `version`, `name`)
   - `blender_version_min` presence
+  - compatibility warning/error against current Blender version when possible
 - Show clear findings in a panel (ERROR / WARNING / OK / INFO)
 
 ## Install
@@ -49,6 +51,8 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added marker-root candidate hints so users can quickly identify which folder should be re-zipped.
 - Added explicit install-path guidance (Extensions vs Add-ons) based on detected package type.
 - Added source-archive detection hints (`*-main.zip` / `*-master.zip` / archive-style names) to reduce GitHub/GitLab download confusion.
+- Added ambiguity diagnostics for ZIPs that contain multiple add-on roots / multiple manifests.
+- Added manifest-vs-current-Blender compatibility check (min/max version signal) to reduce install/version confusion.
 - Split diagnosis engine into reusable `diagnostics_core.py` for easier testing and future CLI use.
 
 ## Next milestones
