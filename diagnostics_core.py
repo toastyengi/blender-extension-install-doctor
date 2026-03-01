@@ -1,3 +1,4 @@
+import ast
 import os
 import zipfile
 import traceback
@@ -96,6 +97,55 @@ def _read_manifest(zf: zipfile.ZipFile):
         return None, f"Manifest parse error: {e}"
 
 
+def _extract_legacy_blender_min_from_init(py_source: str) -> Tuple[Optional[Tuple[int, ...]], Optional[str]]:
+    try:
+        module = ast.parse(py_source)
+    except Exception as e:
+        return None, f"Could not parse __init__.py: {e}"
+
+    for node in module.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "bl_info":
+                    try:
+                        data = ast.literal_eval(node.value)
+                    except Exception as e:
+                        return None, f"Could not evaluate bl_info dictionary: {e}"
+
+                    if not isinstance(data, dict):
+                        return None, "bl_info exists but is not a dictionary literal"
+
+                    blender_value = data.get("blender")
+                    if blender_value is None:
+                        return None, "bl_info missing 'blender' compatibility tuple"
+
+                    if isinstance(blender_value, (tuple, list)) and blender_value:
+                        out = []
+                        for p in blender_value:
+                            if not isinstance(p, int):
+                                return None, "bl_info['blender'] should contain integers"
+                            out.append(p)
+                        return tuple(out), None
+
+                    return None, "bl_info['blender'] is not a tuple/list"
+
+    return None, "bl_info assignment not found in __init__.py"
+
+
+def _read_legacy_blender_min(zf: zipfile.ZipFile) -> Tuple[Optional[Tuple[int, ...]], Optional[str]]:
+    init_candidates = [n for n in zf.namelist() if n.endswith("/__init__.py") or n == "__init__.py"]
+    if not init_candidates:
+        return None, "No __init__.py found for legacy add-on analysis"
+
+    init_path = sorted(init_candidates, key=lambda n: (n.count("/"), n))[0]
+    try:
+        source = zf.read(init_path).decode("utf-8", errors="replace")
+    except Exception as e:
+        return None, f"Could not read legacy __init__.py: {e}"
+
+    return _extract_legacy_blender_min_from_init(source)
+
+
 def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
     report = Report()
 
@@ -189,6 +239,30 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 else:
                     report.add("OK", "Legacy add-on packaging depth looks installable")
 
+                legacy_min_v, legacy_err = _read_legacy_blender_min(zf)
+                if legacy_min_v is not None:
+                    report.add("INFO", f"Legacy bl_info minimum Blender version: {'.'.join(str(p) for p in legacy_min_v)}")
+                    if current_blender_version:
+                        current_v = _parse_version_tuple(current_blender_version)
+                        if current_v is None:
+                            report.add(
+                                "INFO",
+                                f"Could not parse current Blender version '{current_blender_version}' for legacy compatibility check.",
+                            )
+                        elif current_v < legacy_min_v:
+                            report.add(
+                                "ERROR",
+                                "Current Blender version is lower than legacy bl_info['blender'] minimum; add-on is likely incompatible.",
+                            )
+                            report.add(
+                                "INFO",
+                                "Fix hint: install this add-on in a newer Blender version, or use an older add-on release compatible with your current Blender.",
+                            )
+                        else:
+                            report.add("OK", "Current Blender version satisfies legacy bl_info minimum")
+                else:
+                    report.add("INFO", f"Legacy compatibility check skipped: {legacy_err}")
+
             if has_manifest and has_init:
                 report.add(
                     "WARNING",
@@ -263,6 +337,10 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                             report.add(
                                 "WARNING",
                                 "Current Blender version is higher than manifest blender_version_max; addon may be unsupported.",
+                            )
+                            report.add(
+                                "INFO",
+                                "Fix hint: use an add-on release that supports your Blender version, or run this add-on in a compatible Blender version.",
                             )
 
             if len(top_dirs) > 1:

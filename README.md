@@ -22,6 +22,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
   - required keys (`id`, `version`, `name`)
   - `blender_version_min` presence
   - compatibility warning/error against current Blender version when possible
+- For legacy add-ons, reads `bl_info["blender"]` from `__init__.py` and checks minimum Blender compatibility when current Blender version is known
 - Show clear findings in a panel (ERROR / WARNING / OK / INFO)
 
 ## Install
@@ -53,6 +54,8 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added source-archive detection hints (`*-main.zip` / `*-master.zip` / archive-style names) to reduce GitHub/GitLab download confusion.
 - Added ambiguity diagnostics for ZIPs that contain multiple add-on roots / multiple manifests.
 - Added manifest-vs-current-Blender compatibility check (min/max version signal) to reduce install/version confusion.
+- Added legacy add-on compatibility check using `bl_info["blender"]` from `__init__.py`, with explicit guidance when version mismatch is detected.
+- Improved version-mismatch fix hints to better support Blender/add-on version pinning decisions.
 - Split diagnosis engine into reusable `diagnostics_core.py` for easier testing and future CLI use.
 
 ## Next milestones

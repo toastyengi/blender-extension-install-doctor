@@ -83,6 +83,26 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("lower than manifest blender_version_min" in m for m in messages))
 
+    def test_errors_when_current_blender_below_legacy_bl_info_min(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 2, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="4.1.9")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("lower than legacy bl_info['blender'] minimum" in m for m in messages))
+
+    def test_ok_when_current_blender_meets_legacy_bl_info_min(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 2, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="4.2.1")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("satisfies legacy bl_info minimum" in m for m in messages))
+
 
 if __name__ == "__main__":
     unittest.main()
