@@ -53,6 +53,8 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added explicit install-path guidance (Extensions vs Add-ons) based on detected package type.
 - Added source-archive detection hints (`*-main.zip` / `*-master.zip` / archive-style names) to reduce GitHub/GitLab download confusion.
 - Added ambiguity diagnostics for ZIPs that contain multiple add-on roots / multiple manifests.
+- Added targeted "Quick fix target" hints for wrapped source archives (points to the exact folder users should re-zip).
+- Reduced false-positive packaging warnings by ignoring common archive noise folders/files (e.g. `__MACOSX`, `.DS_Store`).
 - Added manifest-vs-current-Blender compatibility check (min/max version signal) to reduce install/version confusion.
 - Added legacy add-on compatibility check using `bl_info["blender"]` from `__init__.py`, with explicit guidance when version mismatch is detected.
 - Improved version-mismatch fix hints to better support Blender/add-on version pinning decisions.

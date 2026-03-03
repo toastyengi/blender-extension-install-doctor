@@ -51,6 +51,31 @@ def _format_roots(roots: List[str]) -> str:
     return ", ".join(roots)
 
 
+def _is_ignorable_top_level(name: str) -> bool:
+    return name in {"__MACOSX", ".DS_Store", "Thumbs.db"}
+
+
+def _single_root_wrapper(names: List[str], marker_name: str) -> Optional[str]:
+    """Return wrapper folder when marker exists only below one top-level root.
+
+    Example: repo-main/my_addon/__init__.py -> returns "repo-main/my_addon"
+    """
+    roots = _marker_roots(names, marker_name)
+    if not roots:
+        return None
+
+    top_dirs = {n.split("/")[0] for n in names if "/" in n}
+    top_dirs = {d for d in top_dirs if not _is_ignorable_top_level(d)}
+    if len(top_dirs) != 1:
+        return None
+
+    top = next(iter(top_dirs))
+    candidates = [r for r in roots if r != "." and r.startswith(f"{top}/")]
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
 def _looks_like_source_archive_name(zip_path: str) -> bool:
     name = Path(zip_path).name.lower()
     source_tokens = [
@@ -168,6 +193,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 return report
 
             top_dirs = {n.split("/")[0] for n in names if "/" in n}
+            top_dirs = {d for d in top_dirs if not _is_ignorable_top_level(d)}
             init_depths = _marker_depths(names, "__init__.py")
             manifest_depths = _marker_depths(names, "blender_manifest.toml")
 
@@ -212,6 +238,12 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                         "INFO",
                         "Fix hint: re-zip the extension folder contents so blender_manifest.toml is the first-level file in the ZIP.",
                     )
+                    wrapper_target = _single_root_wrapper(names, "blender_manifest.toml")
+                    if wrapper_target:
+                        report.add(
+                            "INFO",
+                            f"Quick fix target: create a new ZIP from '{wrapper_target}' contents (not the outer repository folder).",
+                        )
                     if _looks_like_source_archive_name(zip_path):
                         report.add(
                             "INFO",
@@ -231,6 +263,12 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                         "INFO",
                         f"Detected add-on root candidate(s): {_format_roots(init_roots)}",
                     )
+                    wrapper_target = _single_root_wrapper(names, "__init__.py")
+                    if wrapper_target:
+                        report.add(
+                            "INFO",
+                            f"Quick fix target: create a new ZIP from '{wrapper_target}' (folder containing __init__.py) instead of the outer repository ZIP.",
+                        )
                     if _looks_like_source_archive_name(zip_path):
                         report.add(
                             "INFO",

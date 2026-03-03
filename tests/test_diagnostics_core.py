@@ -103,6 +103,29 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("satisfies legacy bl_info minimum" in m for m in messages))
 
+    def test_adds_quick_fix_target_for_wrapped_source_zip(self):
+        zpath = self._zip_with(
+            {
+                "repo-main/my_addon/__init__.py": "bl_info = {}\n",
+                "repo-main/README.md": "docs",
+            },
+            name_suffix="-main.zip",
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Quick fix target" in m and "repo-main/my_addon" in m for m in messages))
+
+    def test_ignores_macosx_noise_in_top_level_structure_warning(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": "bl_info = {}\n",
+                "__MACOSX/._my_addon": "junk",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertFalse(any("multiple top-level folders/files" in m.lower() for m in messages))
+
 
 if __name__ == "__main__":
     unittest.main()
