@@ -58,6 +58,8 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added manifest-vs-current-Blender compatibility check (min/max version signal) to reduce install/version confusion.
 - Added legacy add-on compatibility check using `bl_info["blender"]` from `__init__.py`, with explicit guidance when version mismatch is detected.
 - Improved version-mismatch fix hints to better support Blender/add-on version pinning decisions.
+- Added explicit compatibility range pinning hints (e.g. target Blender <= declared max, or >= declared min) for faster downgrade/upgrade decisions.
+- Made version parsing more robust for real-world strings like `Blender v5.0.1-alpha` so compatibility checks run more reliably.
 - Split diagnosis engine into reusable `diagnostics_core.py` for easier testing and future CLI use.
 
 ## Next milestones

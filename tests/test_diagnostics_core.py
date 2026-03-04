@@ -82,6 +82,28 @@ class DiagnoseZipTests(unittest.TestCase):
         report = diagnose_zip(str(zpath), current_blender_version="5.0.1")
         messages = [e.message for e in report.entries]
         self.assertTrue(any("lower than manifest blender_version_min" in m for m in messages))
+        self.assertTrue(any("Pinning hint" in m for m in messages))
+
+    def test_parses_current_blender_version_with_suffix(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="5.1.0"\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="Blender v5.0.1-alpha")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("lower than manifest blender_version_min" in m for m in messages))
+
+    def test_warns_when_current_blender_above_manifest_max_with_pinning_hint(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\nblender_version_max="4.5.0"\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="5.0.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("higher than manifest blender_version_max" in m for m in messages))
+        self.assertTrue(any("declared compatible Blender range is 4.2.0 to 4.5.0" in m for m in messages))
 
     def test_errors_when_current_blender_below_legacy_bl_info_min(self):
         zpath = self._zip_with(

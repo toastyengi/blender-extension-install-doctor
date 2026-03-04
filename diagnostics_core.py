@@ -4,6 +4,7 @@ import zipfile
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import List, Optional, Tuple
 
 try:
@@ -92,14 +93,22 @@ def _parse_version_tuple(value: str) -> Optional[Tuple[int, ...]]:
     if not value:
         return None
 
-    parts = str(value).strip().split(".")
-    out = []
-    for p in parts:
-        try:
-            out.append(int(p))
-        except ValueError:
-            return None
+    # Accept common real-world variants from Blender/UI/docs:
+    # - v5.0.1
+    # - 5.0.0-alpha
+    # - 4.2 (LTS)
+    # - Blender 5.0.0
+    raw = str(value).strip()
+    m = re.search(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", raw)
+    if not m:
+        return None
+
+    out = [int(g) for g in m.groups() if g is not None]
     return tuple(out) if out else None
+
+
+def _fmt_version(v: Tuple[int, ...]) -> str:
+    return ".".join(str(p) for p in v)
 
 
 def _read_manifest(zf: zipfile.ZipFile):
@@ -294,7 +303,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                             )
                             report.add(
                                 "INFO",
-                                "Fix hint: install this add-on in a newer Blender version, or use an older add-on release compatible with your current Blender.",
+                                f"Pinning hint: this legacy add-on declares minimum Blender {_fmt_version(legacy_min_v)}. Upgrade Blender to >= {_fmt_version(legacy_min_v)} or install an older add-on release for your current Blender.",
                             )
                         else:
                             report.add("OK", "Current Blender version satisfies legacy bl_info minimum")
@@ -371,6 +380,10 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                                 "ERROR",
                                 "Current Blender version is lower than manifest blender_version_min; installation/runtime issues are likely.",
                             )
+                            report.add(
+                                "INFO",
+                                f"Pinning hint: this package targets Blender >= {_fmt_version(min_v)}. Upgrade Blender or use an older add-on release compatible with {_fmt_version(current_v)}.",
+                            )
                         if max_v is not None and current_v > max_v:
                             report.add(
                                 "WARNING",
@@ -378,7 +391,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                             )
                             report.add(
                                 "INFO",
-                                "Fix hint: use an add-on release that supports your Blender version, or run this add-on in a compatible Blender version.",
+                                f"Pinning hint: declared compatible Blender range is {_fmt_version(min_v) if min_v else '?'} to {_fmt_version(max_v)}. Use a Blender version <= {_fmt_version(max_v)} or find a newer add-on release.",
                             )
 
             if len(top_dirs) > 1:
