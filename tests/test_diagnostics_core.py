@@ -37,7 +37,7 @@ class DiagnoseZipTests(unittest.TestCase):
         zpath = self._zip_with({"README.md": "not an addon"})
         report = diagnose_zip(str(zpath))
         messages = [e.message for e in report.entries]
-        self.assertTrue(any("Could not find blender_manifest.toml or __init__.py" in m for m in messages))
+        self.assertTrue(any("Could not find blender_manifest.toml" in m for m in messages))
 
     def test_source_archive_hint_for_nested_manifest(self):
         zpath = self._zip_with(
@@ -147,6 +147,39 @@ class DiagnoseZipTests(unittest.TestCase):
         report = diagnose_zip(str(zpath))
         messages = [e.message for e in report.entries]
         self.assertFalse(any("multiple top-level folders/files" in m.lower() for m in messages))
+
+
+    def test_detects_single_file_addon_at_root(self):
+        zpath = self._zip_with(
+            {
+                "my_addon.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="4.2.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("single-file add-on packaging depth looks installable" in m.lower() for m in messages))
+        self.assertTrue(any("Single-file add-on 'my_addon.py' minimum Blender version: 4.0.0" in m for m in messages))
+
+    def test_warns_for_nested_single_file_addon(self):
+        zpath = self._zip_with(
+            {
+                "repo-main/my_addon.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\n',
+            },
+            name_suffix="-main.zip",
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("single-file add-on (.py with bl_info) is nested" in m.lower() for m in messages))
+
+    def test_errors_when_current_blender_below_single_file_bl_info_min(self):
+        zpath = self._zip_with(
+            {
+                "my_addon.py": 'bl_info = {"name": "A", "blender": (5, 0, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="4.2.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("lower than 'my_addon.py' bl_info['blender'] minimum" in m for m in messages))
 
 
 if __name__ == "__main__":

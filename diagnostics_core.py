@@ -131,7 +131,7 @@ def _read_manifest(zf: zipfile.ZipFile):
         return None, f"Manifest parse error: {e}"
 
 
-def _extract_legacy_blender_min_from_init(py_source: str) -> Tuple[Optional[Tuple[int, ...]], Optional[str]]:
+def _extract_legacy_blender_min_from_source(py_source: str) -> Tuple[Optional[Tuple[int, ...]], Optional[str]]:
     try:
         module = ast.parse(py_source)
     except Exception as e:
@@ -163,7 +163,7 @@ def _extract_legacy_blender_min_from_init(py_source: str) -> Tuple[Optional[Tupl
 
                     return None, "bl_info['blender'] is not a tuple/list"
 
-    return None, "bl_info assignment not found in __init__.py"
+    return None, "bl_info assignment not found"
 
 
 def _read_legacy_blender_min(zf: zipfile.ZipFile) -> Tuple[Optional[Tuple[int, ...]], Optional[str]]:
@@ -177,8 +177,30 @@ def _read_legacy_blender_min(zf: zipfile.ZipFile) -> Tuple[Optional[Tuple[int, .
     except Exception as e:
         return None, f"Could not read legacy __init__.py: {e}"
 
-    return _extract_legacy_blender_min_from_init(source)
+    return _extract_legacy_blender_min_from_source(source)
 
+
+
+
+def _find_legacy_single_file_addons(zf: zipfile.ZipFile) -> List[Tuple[str, Optional[Tuple[int, ...]], Optional[str]]]:
+    """Return python files that look like legacy single-file addons (contain bl_info)."""
+    out: List[Tuple[str, Optional[Tuple[int, ...]], Optional[str]]] = []
+    py_candidates = [n for n in zf.namelist() if n.endswith(".py") and not n.endswith("/__init__.py")]
+    for path in sorted(py_candidates, key=lambda n: (n.count("/"), n)):
+        try:
+            source = zf.read(path).decode("utf-8", errors="replace")
+        except Exception as e:
+            out.append((path, None, f"Could not read Python file: {e}"))
+            continue
+
+        min_v, err = _extract_legacy_blender_min_from_source(source)
+        if min_v is not None:
+            out.append((path, min_v, None))
+        elif err and "bl_info assignment not found" not in err:
+            # Keep parse/eval problems visible because they often explain install failures.
+            out.append((path, None, err))
+
+    return out
 
 def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
     report = Report()
@@ -209,8 +231,13 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
             init_roots = _marker_roots(names, "__init__.py")
             manifest_roots = _marker_roots(names, "blender_manifest.toml")
 
+            single_file_addons = _find_legacy_single_file_addons(zf)
+            single_file_paths = [p for p, _v, _e in single_file_addons]
+            single_file_depths = [len([p for p in n.split("/") if p]) - 1 for n in single_file_paths]
+
             has_init = bool(init_depths)
             has_manifest = bool(manifest_depths)
+            has_single_file_addon = bool(single_file_paths)
 
             if len(manifest_roots) > 1:
                 report.add(
@@ -310,16 +337,58 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 else:
                     report.add("INFO", f"Legacy compatibility check skipped: {legacy_err}")
 
+            if has_single_file_addon and not has_manifest:
+                min_depth = min(single_file_depths)
+                if min_depth > 0:
+                    report.add(
+                        "WARNING",
+                        "Legacy single-file add-on (.py with bl_info) is nested in subfolder(s). Re-zip so the .py file is at ZIP root.",
+                    )
+                    report.add(
+                        "INFO",
+                        f"Detected single-file add-on candidate(s): {', '.join(single_file_paths)}",
+                    )
+                    if _looks_like_source_archive_name(zip_path):
+                        report.add(
+                            "INFO",
+                            "This looks like a source archive. Prefer a release/install ZIP when available.",
+                        )
+                else:
+                    report.add("OK", "Legacy single-file add-on packaging depth looks installable")
+
+                report.add(
+                    "INFO",
+                    "Recommended install path: Edit > Preferences > Add-ons > Install from Disk (legacy add-on).",
+                )
+
+                for path, min_v, err in single_file_addons:
+                    if min_v is not None:
+                        report.add("INFO", f"Single-file add-on '{path}' minimum Blender version: {_fmt_version(min_v)}")
+                        if current_blender_version:
+                            current_v = _parse_version_tuple(current_blender_version)
+                            if current_v is None:
+                                report.add(
+                                    "INFO",
+                                    f"Could not parse current Blender version '{current_blender_version}' for single-file compatibility check.",
+                                )
+                            elif current_v < min_v:
+                                report.add(
+                                    "ERROR",
+                                    f"Current Blender version is lower than '{path}' bl_info['blender'] minimum; add-on is likely incompatible.",
+                                )
+                    elif err:
+                        report.add("WARNING", f"Single-file add-on candidate '{path}' has bl_info parse issue: {err}")
+
             if has_manifest and has_init:
                 report.add(
                     "WARNING",
                     "Both extension manifest and legacy __init__.py detected. Ensure you install through the intended path to avoid confusion.",
                 )
 
-            if not has_manifest and not has_init:
+            if not has_manifest and not has_init and not has_single_file_addon:
                 report.add(
                     "ERROR",
-                    "Could not find blender_manifest.toml or __init__.py. This ZIP likely is source/docs, not an installable package.",
+                    "Could not find blender_manifest.toml, __init__.py, or a single-file add-on module with bl_info. This ZIP likely is source/docs, not an installable package.",
                 )
                 if _looks_like_source_archive_name(zip_path):
                     report.add(
