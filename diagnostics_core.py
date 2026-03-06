@@ -89,6 +89,10 @@ def _looks_like_source_archive_name(zip_path: str) -> bool:
     return any(token in name for token in source_tokens)
 
 
+def _embedded_zip_candidates(names: List[str]) -> List[str]:
+    return sorted([n for n in names if n.lower().endswith(".zip")])
+
+
 def _parse_version_tuple(value: str) -> Optional[Tuple[int, ...]]:
     if not value:
         return None
@@ -234,6 +238,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
             single_file_addons = _find_legacy_single_file_addons(zf)
             single_file_paths = [p for p, _v, _e in single_file_addons]
             single_file_depths = [len([p for p in n.split("/") if p]) - 1 for n in single_file_paths]
+            embedded_zip_paths = _embedded_zip_candidates(names)
 
             has_init = bool(init_depths)
             has_manifest = bool(manifest_depths)
@@ -383,6 +388,17 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 report.add(
                     "WARNING",
                     "Both extension manifest and legacy __init__.py detected. Ensure you install through the intended path to avoid confusion.",
+                )
+
+            if embedded_zip_paths and not has_manifest and not has_init and not has_single_file_addon:
+                report.add(
+                    "WARNING",
+                    "This ZIP contains another ZIP but no install markers at the current level. You likely selected an outer wrapper archive.",
+                )
+                report.add("INFO", f"Embedded ZIP candidate(s): {', '.join(embedded_zip_paths)}")
+                report.add(
+                    "INFO",
+                    "Fix hint: extract this archive, then install the inner ZIP that contains blender_manifest.toml or the add-on __init__.py/.py file.",
                 )
 
             if not has_manifest and not has_init and not has_single_file_addon:

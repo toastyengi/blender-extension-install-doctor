@@ -13,6 +13,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
   - warns if `blender_manifest.toml` is not at ZIP root (common GitHub/GitLab source ZIP mistake)
   - warns if `__init__.py` is nested too deep for legacy add-ons
   - warns when multiple add-on roots or multiple manifests exist in one ZIP
+  - detects wrapper archives that only contain an inner ZIP and points to the actual install candidate
   - shows detected marker root candidates to help users re-zip the correct folder
   - warns on mixed extension + legacy markers
 - Gives explicit install-path recommendation:
@@ -63,6 +64,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Split diagnosis engine into reusable `diagnostics_core.py` for easier testing and future CLI use.
 - Added detection for legacy **single-file add-ons** (`.py` with `bl_info`) so valid packages are no longer misclassified as malformed ZIPs.
 - Added nested-depth diagnostics for single-file add-ons and compatibility checks against current Blender version.
+- Added wrapper-archive diagnostics: if a ZIP only contains another ZIP (common double-compressed download pattern), Doctor now points users to the inner install ZIP.
 
 ## Next milestones
 

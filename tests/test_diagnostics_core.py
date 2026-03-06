@@ -39,6 +39,18 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("Could not find blender_manifest.toml" in m for m in messages))
 
+    def test_detects_embedded_zip_wrapper_archives(self):
+        zpath = self._zip_with(
+            {
+                "my-addon-package.zip": "binary-ish",
+                "README.txt": "install notes",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("contains another ZIP" in m for m in messages))
+        self.assertTrue(any("Embedded ZIP candidate(s): my-addon-package.zip" in m for m in messages))
+
     def test_source_archive_hint_for_nested_manifest(self):
         zpath = self._zip_with(
             {
