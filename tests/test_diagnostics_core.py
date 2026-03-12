@@ -51,6 +51,49 @@ class DiagnoseZipTests(unittest.TestCase):
         self.assertTrue(any("contains another ZIP" in m for m in messages))
         self.assertTrue(any("Embedded ZIP candidate(s): my-addon-package.zip" in m for m in messages))
 
+    def test_identifies_single_installable_inner_zip_and_install_path(self):
+        inner = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        inner.close()
+        inner_path = Path(inner.name)
+        with zipfile.ZipFile(inner_path, "w") as zf:
+            zf.writestr("blender_manifest.toml", 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n')
+
+        outer = self._zip_with(
+            {
+                "bundle/installable.zip": inner_path.read_bytes(),
+                "bundle/README.txt": "notes",
+            }
+        )
+        report = diagnose_zip(str(outer))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Inner ZIP 'bundle/installable.zip' looks installable" in m for m in messages))
+        self.assertTrue(any("Extensions > Install from Disk" in m for m in messages))
+
+    def test_warns_when_multiple_installable_inner_zips_found(self):
+        ext_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        ext_zip.close()
+        ext_path = Path(ext_zip.name)
+        with zipfile.ZipFile(ext_path, "w") as zf:
+            zf.writestr("blender_manifest.toml", 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n')
+
+        legacy_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        legacy_zip.close()
+        legacy_path = Path(legacy_zip.name)
+        with zipfile.ZipFile(legacy_path, "w") as zf:
+            zf.writestr("my_addon/__init__.py", "bl_info = {}\n")
+
+        outer = self._zip_with(
+            {
+                "bundle/ext.zip": ext_path.read_bytes(),
+                "bundle/legacy.zip": legacy_path.read_bytes(),
+            }
+        )
+        report = diagnose_zip(str(outer))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Multiple inner ZIPs look potentially installable" in m for m in messages))
+        self.assertTrue(any("bundle/ext.zip: extension markers" in m for m in messages))
+        self.assertTrue(any("bundle/legacy.zip: legacy markers" in m for m in messages))
+
     def test_source_archive_hint_for_nested_manifest(self):
         zpath = self._zip_with(
             {

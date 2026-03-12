@@ -1,4 +1,5 @@
 import ast
+import io
 import os
 import zipfile
 import traceback
@@ -91,6 +92,51 @@ def _looks_like_source_archive_name(zip_path: str) -> bool:
 
 def _embedded_zip_candidates(names: List[str]) -> List[str]:
     return sorted([n for n in names if n.lower().endswith(".zip")])
+
+
+@dataclass
+class EmbeddedZipSignal:
+    path: str
+    has_manifest: bool = False
+    has_init: bool = False
+    has_single_file_addon: bool = False
+    error: Optional[str] = None
+
+    @property
+    def installable(self) -> bool:
+        return self.has_manifest or self.has_init or self.has_single_file_addon
+
+
+def _classify_zip_names(names: List[str]) -> Tuple[bool, bool, bool]:
+    has_manifest = any(n.endswith("blender_manifest.toml") for n in names)
+    has_init = any(n.endswith("/__init__.py") or n == "__init__.py" for n in names)
+    has_single_file = any(n.endswith(".py") and not n.endswith("/__init__.py") for n in names)
+    return has_manifest, has_init, has_single_file
+
+
+def _scan_embedded_zip_signals(zf: zipfile.ZipFile, embedded_zip_paths: List[str]) -> List[EmbeddedZipSignal]:
+    signals: List[EmbeddedZipSignal] = []
+    for path in embedded_zip_paths:
+        try:
+            data = zf.read(path)
+            with zipfile.ZipFile(io.BytesIO(data), "r") as inner:
+                names = inner.namelist()
+                has_manifest, has_init, has_single_file = _classify_zip_names(names)
+                if has_single_file:
+                    # avoid counting random .py files unless they look like single-file add-ons
+                    candidates = _find_legacy_single_file_addons(inner)
+                    has_single_file = any(min_v is not None for _p, min_v, _e in candidates)
+                signals.append(
+                    EmbeddedZipSignal(
+                        path=path,
+                        has_manifest=has_manifest,
+                        has_init=has_init,
+                        has_single_file_addon=has_single_file,
+                    )
+                )
+        except Exception as e:
+            signals.append(EmbeddedZipSignal(path=path, error=str(e)))
+    return signals
 
 
 def _parse_version_tuple(value: str) -> Optional[Tuple[int, ...]]:
@@ -239,6 +285,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
             single_file_paths = [p for p, _v, _e in single_file_addons]
             single_file_depths = [len([p for p in n.split("/") if p]) - 1 for n in single_file_paths]
             embedded_zip_paths = _embedded_zip_candidates(names)
+            embedded_zip_signals = _scan_embedded_zip_signals(zf, embedded_zip_paths) if embedded_zip_paths else []
 
             has_init = bool(init_depths)
             has_manifest = bool(manifest_depths)
@@ -396,6 +443,38 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                     "This ZIP contains another ZIP but no install markers at the current level. You likely selected an outer wrapper archive.",
                 )
                 report.add("INFO", f"Embedded ZIP candidate(s): {', '.join(embedded_zip_paths)}")
+
+                installable_inner = [s for s in embedded_zip_signals if s.installable]
+                if len(installable_inner) == 1:
+                    s = installable_inner[0]
+                    report.add("OK", f"Inner ZIP '{s.path}' looks installable.")
+                    if s.has_manifest:
+                        report.add(
+                            "INFO",
+                            "Install hint: use Extensions > Install from Disk and select the inner ZIP.",
+                        )
+                    elif s.has_init or s.has_single_file_addon:
+                        report.add(
+                            "INFO",
+                            "Install hint: use Add-ons > Install from Disk and select the inner ZIP.",
+                        )
+                elif len(installable_inner) > 1:
+                    report.add(
+                        "WARNING",
+                        "Multiple inner ZIPs look potentially installable. Choose the one matching your intended package type.",
+                    )
+                    for s in installable_inner:
+                        kinds = []
+                        if s.has_manifest:
+                            kinds.append("extension")
+                        if s.has_init or s.has_single_file_addon:
+                            kinds.append("legacy")
+                        report.add("INFO", f"- {s.path}: {', '.join(kinds)} markers")
+                else:
+                    unreadable = [s for s in embedded_zip_signals if s.error]
+                    if unreadable:
+                        report.add("INFO", f"Could not inspect embedded ZIP(s): {', '.join(f'{s.path} ({s.error})' for s in unreadable)}")
+
                 report.add(
                     "INFO",
                     "Fix hint: extract this archive, then install the inner ZIP that contains blender_manifest.toml or the add-on __init__.py/.py file.",
