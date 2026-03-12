@@ -226,6 +226,35 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("single-file add-on (.py with bl_info) is nested" in m.lower() for m in messages))
 
+
+    def test_accepts_direct_single_file_addon_path(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        tmp.write(b'bl_info = {"name": "A", "blender": (4, 0, 0)}\n')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name, current_blender_version="4.2.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Detected legacy single-file add-on" in m for m in messages))
+        self.assertTrue(any("select the .py file directly" in m.lower() for m in messages))
+
+    def test_errors_for_direct_py_without_bl_info(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        tmp.write(b'print("hello")\n')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name)
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("does not declare bl_info" in m for m in messages))
+
+    def test_errors_for_non_zip_non_py_selection(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".txt", delete=False)
+        tmp.write(b'not an addon')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name)
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("not a .zip or .py" in m for m in messages))
+
     def test_errors_when_current_blender_below_single_file_bl_info_min(self):
         zpath = self._zip_with(
             {

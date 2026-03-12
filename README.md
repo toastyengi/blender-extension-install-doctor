@@ -4,7 +4,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 
 ## What it does
 
-- Analyze a selected `.zip`
+- Analyze a selected extension/add-on package (`.zip` or legacy single-file `.py`)
 - Detect if package looks like:
   - Blender extension (`blender_manifest.toml` present)
   - Legacy add-on (`__init__.py` present)
@@ -18,7 +18,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
   - warns on mixed extension + legacy markers
 - Gives explicit install-path recommendation:
   - **Extensions > Install from Disk** for extension packages
-  - **Add-ons > Install from Disk** for legacy add-ons
+  - **Add-ons > Install from Disk** for legacy add-ons (including direct single-file `.py` add-ons)
 - Validate some manifest basics:
   - required keys (`id`, `version`, `name`)
   - `blender_version_min` presence
@@ -66,6 +66,8 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added nested-depth diagnostics for single-file add-ons and compatibility checks against current Blender version.
 - Added wrapper-archive diagnostics: if a ZIP only contains another ZIP (common double-compressed download pattern), Doctor now points users to the inner install ZIP.
 - Added embedded-inner-ZIP inspection to identify which inner ZIP is actually installable and which install path to use (Extensions vs Add-ons).
+- Added direct `.py` analysis so users can diagnose/install legacy single-file add-ons without zipping first.
+- Added clear error guidance when a selected `.py` lacks `bl_info`, reducing false "invalid ZIP" confusion.
 
 ## Next milestones
 

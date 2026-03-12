@@ -252,6 +252,56 @@ def _find_legacy_single_file_addons(zf: zipfile.ZipFile) -> List[Tuple[str, Opti
 
     return out
 
+
+
+def _diagnose_single_file_addon(py_path: str, current_blender_version: Optional[str] = None) -> Report:
+    report = Report()
+
+    try:
+        source = Path(py_path).read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        report.add("ERROR", f"Could not read Python file: {e}")
+        return report
+
+    min_v, err = _extract_legacy_blender_min_from_source(source)
+    if min_v is None:
+        if err:
+            if "bl_info assignment not found" in err:
+                report.add("ERROR", "Selected .py file does not declare bl_info, so Blender will not treat it as an installable legacy add-on.")
+            else:
+                report.add("WARNING", f"Single-file add-on metadata parse issue: {err}")
+        else:
+            report.add("ERROR", "Could not detect single-file add-on metadata (bl_info).")
+        report.add("INFO", "Fix hint: install a .py add-on file that contains a valid bl_info dictionary at module level.")
+        return report
+
+    report.add("OK", "Detected legacy single-file add-on (.py with bl_info)")
+    report.add("INFO", f"Single-file add-on minimum Blender version: {_fmt_version(min_v)}")
+    report.add(
+        "INFO",
+        "Recommended install path: Edit > Preferences > Add-ons > Install from Disk (select the .py file directly).",
+    )
+
+    if current_blender_version:
+        current_v = _parse_version_tuple(current_blender_version)
+        if current_v is None:
+            report.add(
+                "INFO",
+                f"Could not parse current Blender version '{current_blender_version}' for compatibility check.",
+            )
+        elif current_v < min_v:
+            report.add(
+                "ERROR",
+                "Current Blender version is lower than bl_info['blender'] minimum; add-on is likely incompatible.",
+            )
+            report.add(
+                "INFO",
+                f"Pinning hint: this single-file add-on declares minimum Blender {_fmt_version(min_v)}. Upgrade Blender or use an older add-on variant.",
+            )
+        else:
+            report.add("OK", "Current Blender version satisfies single-file bl_info minimum")
+
+    return report
 def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
     report = Report()
 
@@ -263,8 +313,14 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
         report.add("ERROR", f"File does not exist: {zip_path}")
         return report
 
-    if not zip_path.lower().endswith(".zip"):
-        report.add("WARNING", "Selected file is not a .zip archive")
+    lower_path = zip_path.lower()
+    if lower_path.endswith(".py"):
+        return _diagnose_single_file_addon(zip_path, current_blender_version=current_blender_version)
+
+    if not lower_path.endswith(".zip"):
+        report.add("ERROR", "Selected file is not a .zip or .py add-on package")
+        report.add("INFO", "Choose an extension ZIP or a legacy single-file .py add-on.")
+        return report
 
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
