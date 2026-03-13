@@ -48,6 +48,8 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 ## Changelog
 
 ### v0.2 (unreleased)
+- Added manifest schema sanity checks for install-critical fields: validates SemVer format for `version`, flags malformed `blender_version_min/max`, and detects invalid/inverted Blender compatibility ranges.
+- Added `id` slug hygiene check (non-empty, no spaces) to catch common manifest mistakes before install.
 - Added packaging-depth diagnostics to catch extra ZIP nesting (common with GitHub/GitLab source downloads).
 - Tightened extension check: warns whenever `blender_manifest.toml` is not at ZIP root, with re-zip guidance.
 - Added marker-root candidate hints so users can quickly identify which folder should be re-zipped.

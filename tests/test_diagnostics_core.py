@@ -160,6 +160,26 @@ class DiagnoseZipTests(unittest.TestCase):
         self.assertTrue(any("higher than manifest blender_version_max" in m for m in messages))
         self.assertTrue(any("declared compatible Blender range is 4.2.0 to 4.5.0" in m for m in messages))
 
+    def test_errors_when_manifest_version_is_not_semver(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="my-addon"\nname="A"\nversion="v1"\nblender_version_min="4.2.0"\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Manifest 'version' should be SemVer" in m for m in messages))
+
+    def test_errors_when_manifest_blender_range_is_inverted(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="my-addon"\nname="A"\nversion="1.2.3"\nblender_version_min="5.0.0"\nblender_version_max="4.2.0"\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("max lower than blender_version_min" in m for m in messages))
+
     def test_errors_when_current_blender_below_legacy_bl_info_min(self):
         zpath = self._zip_with(
             {

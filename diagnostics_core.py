@@ -161,6 +161,12 @@ def _fmt_version(v: Tuple[int, ...]) -> str:
     return ".".join(str(p) for p in v)
 
 
+def _looks_like_semver(value: str) -> bool:
+    # Accept SemVer core with optional pre-release/build metadata.
+    # Examples: 1.0.0, 2.4.1-beta.2, 0.9.0+build5
+    return bool(re.match(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$", str(value).strip()))
+
+
 def _read_manifest(zf: zipfile.ZipFile):
     manifest_candidates = [n for n in zf.namelist() if n.endswith("blender_manifest.toml")]
     if not manifest_candidates:
@@ -573,15 +579,49 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 else:
                     report.add("OK", "Manifest has required base fields (id, version, name)")
 
+                    addon_id = str(manifest.get("id", "")).strip()
+                    if not addon_id or any(ch.isspace() for ch in addon_id):
+                        report.add("ERROR", "Manifest 'id' should be a non-empty slug without spaces.")
+
+                    manifest_version = manifest.get("version")
+                    if not _looks_like_semver(str(manifest_version)):
+                        report.add(
+                            "ERROR",
+                            f"Manifest 'version' should be SemVer (x.y.z). Got: {manifest_version}",
+                        )
+                    else:
+                        report.add("OK", f"Manifest version format looks valid: {manifest_version}")
+
                 blender_version_min = manifest.get("blender_version_min")
+                min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
                 if not blender_version_min:
                     report.add("WARNING", "Manifest missing blender_version_min")
+                elif min_v is None:
+                    report.add("ERROR", f"Manifest blender_version_min is not parseable: {blender_version_min}")
                 else:
                     report.add("OK", f"blender_version_min = {blender_version_min}")
 
                 blender_version_max = manifest.get("blender_version_max")
+                max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
                 if blender_version_max:
-                    report.add("OK", f"blender_version_max = {blender_version_max}")
+                    if max_v is None:
+                        report.add("ERROR", f"Manifest blender_version_max is not parseable: {blender_version_max}")
+                    else:
+                        report.add("OK", f"blender_version_max = {blender_version_max}")
+
+                if min_v is not None and max_v is not None and max_v < min_v:
+                    report.add(
+                        "ERROR",
+                        "Manifest declares blender_version_max lower than blender_version_min; compatibility range is invalid.",
+                    )
+
+                if min_v is not None and max_v is not None and min_v == max_v:
+                    report.add("INFO", "Manifest targets exactly one Blender version (min == max).")
+
+                if current_blender_version:
+                    current_v = _parse_version_tuple(current_blender_version)
+                    min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
+                    max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
 
                 if current_blender_version:
                     current_v = _parse_version_tuple(current_blender_version)
