@@ -33,6 +33,12 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("Add-ons > Install from Disk" in m for m in messages))
 
+    def test_does_not_show_missing_manifest_warning_for_valid_legacy_addon(self):
+        zpath = self._zip_with({"my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'})
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("Extension manifest issue" in m for m in warnings))
+
     def test_errors_when_no_install_markers_found(self):
         zpath = self._zip_with({"README.md": "not an addon"})
         report = diagnose_zip(str(zpath))

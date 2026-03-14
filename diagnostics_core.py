@@ -554,13 +554,15 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                     )
 
             if manifest is None:
-                report.add("WARNING", f"Extension manifest issue: {manifest_err}")
-                if has_init:
+                if has_manifest:
+                    report.add("WARNING", f"Extension manifest issue: {manifest_err}")
+
+                if has_init or has_single_file_addon:
                     report.add(
                         "INFO",
                         "Recommended install path: Edit > Preferences > Add-ons > Install from Disk (legacy add-on).",
                     )
-                else:
+                elif not has_manifest:
                     report.add(
                         "INFO",
                         "Could not detect legacy add-on markers either. Package may be malformed.",

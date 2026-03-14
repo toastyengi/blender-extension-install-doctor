@@ -70,6 +70,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added embedded-inner-ZIP inspection to identify which inner ZIP is actually installable and which install path to use (Extensions vs Add-ons).
 - Added direct `.py` analysis so users can diagnose/install legacy single-file add-ons without zipping first.
 - Added clear error guidance when a selected `.py` lacks `bl_info`, reducing false "invalid ZIP" confusion.
+- Reduced false-positive warnings for valid legacy add-ons by suppressing "missing extension manifest" noise when legacy markers are present.
 
 ## Next milestones
 
