@@ -19,16 +19,16 @@ class EID_Item(bpy.types.PropertyGroup):
 
 class EID_Props(bpy.types.PropertyGroup):
     zip_path: bpy.props.StringProperty(
-        name="ZIP Path",
-        description="Path to extension/add-on ZIP",
+        name="Package Path",
+        description="Path to extension/add-on package (.zip, .py, or folder for diagnostics)",
         subtype='FILE_PATH',
     )
 
 
 class EID_OT_diagnose(bpy.types.Operator):
     bl_idname = "eid.diagnose"
-    bl_label = "Diagnose ZIP"
-    bl_description = "Analyze selected ZIP for common install issues"
+    bl_label = "Diagnose Package"
+    bl_description = "Analyze selected package (.zip/.py/folder) for common install issues"
 
     def execute(self, context):
         props = context.scene.eid_props

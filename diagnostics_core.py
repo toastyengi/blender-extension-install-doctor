@@ -308,6 +308,92 @@ def _diagnose_single_file_addon(py_path: str, current_blender_version: Optional[
             report.add("OK", "Current Blender version satisfies single-file bl_info minimum")
 
     return report
+
+
+def _find_legacy_single_file_addons_in_dir(root: str) -> List[Tuple[str, Optional[Tuple[int, ...]], Optional[str]]]:
+    out: List[Tuple[str, Optional[Tuple[int, ...]], Optional[str]]] = []
+    base = Path(root)
+    for path in sorted(base.rglob('*.py')):
+        if path.name == '__init__.py':
+            continue
+        try:
+            source = path.read_text(encoding='utf-8', errors='replace')
+        except Exception as e:
+            out.append((path.relative_to(base).as_posix(), None, f"Could not read Python file: {e}"))
+            continue
+
+        min_v, err = _extract_legacy_blender_min_from_source(source)
+        rel = path.relative_to(base).as_posix()
+        if min_v is not None:
+            out.append((rel, min_v, None))
+        elif err and 'bl_info assignment not found' not in err:
+            out.append((rel, None, err))
+
+    return out
+
+
+def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[str] = None) -> Report:
+    report = Report()
+    base = Path(dir_path)
+
+    try:
+        all_files = [p.relative_to(base).as_posix() for p in base.rglob('*') if p.is_file()]
+    except Exception as e:
+        report.add('ERROR', f"Could not read selected folder: {e}")
+        return report
+
+    if not all_files:
+        report.add('ERROR', 'Selected folder is empty.')
+        return report
+
+    manifest_paths = sorted([n for n in all_files if n.endswith('blender_manifest.toml')])
+    init_paths = sorted([n for n in all_files if n == '__init__.py' or n.endswith('/__init__.py')])
+    single_file_addons = _find_legacy_single_file_addons_in_dir(dir_path)
+
+    report.add('WARNING', 'Selected path is a folder. Blender Install from Disk expects a .zip package (or a single .py add-on file).')
+
+    has_manifest = bool(manifest_paths)
+    has_init = bool(init_paths)
+    has_single = any(v is not None for _p, v, _e in single_file_addons)
+
+    if has_manifest:
+        root_manifest = 'blender_manifest.toml' in manifest_paths
+        if root_manifest:
+            report.add('INFO', 'Folder appears to be an extension source root (blender_manifest.toml at folder root).')
+            report.add('INFO', 'Quick fix: zip this folder CONTENTS (not the parent folder), then install via Preferences > Extensions > Install from Disk.')
+        else:
+            report.add('WARNING', 'Found blender_manifest.toml only in subfolder(s), not folder root.')
+            report.add('INFO', f"Manifest location(s): {', '.join(manifest_paths)}")
+            report.add('INFO', 'Quick fix: zip the specific subfolder that contains blender_manifest.toml at its root level.')
+
+    if has_init and not has_manifest:
+        root_init = '__init__.py' in init_paths
+        if root_init:
+            report.add('INFO', 'Folder appears to be a legacy add-on root (__init__.py at folder root).')
+            report.add('INFO', 'Quick fix: zip this folder (so __init__.py is inside addon root), then install via Preferences > Add-ons > Install from Disk.')
+        else:
+            report.add('WARNING', 'Legacy __init__.py found only in subfolder(s).')
+            report.add('INFO', f"Add-on root candidate(s): {', '.join(sorted({str(Path(p).parent) for p in init_paths}))}")
+            report.add('INFO', 'Quick fix: zip the folder that directly contains __init__.py.')
+
+    if has_single and not has_manifest:
+        valid_single = [p for p, v, _e in single_file_addons if v is not None]
+        report.add('INFO', f"Detected single-file add-on candidate(s): {', '.join(valid_single)}")
+        if len(valid_single) == 1 and '/' not in valid_single[0]:
+            report.add('INFO', 'You can install this .py directly via Preferences > Add-ons > Install from Disk (no ZIP needed).')
+
+    if not has_manifest and not has_init and not has_single:
+        report.add('ERROR', 'Could not find install markers in this folder (blender_manifest.toml, __init__.py, or .py with bl_info).')
+
+    if current_blender_version and has_single:
+        current_v = _parse_version_tuple(current_blender_version)
+        if current_v is not None:
+            for path, min_v, _err in single_file_addons:
+                if min_v is not None and current_v < min_v:
+                    report.add('ERROR', f"Current Blender version is lower than '{path}' bl_info['blender'] minimum.")
+
+    return report
+
 def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
     report = Report()
 
@@ -318,6 +404,9 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
     if not os.path.exists(zip_path):
         report.add("ERROR", f"File does not exist: {zip_path}")
         return report
+
+    if os.path.isdir(zip_path):
+        return _diagnose_directory_addon(zip_path, current_blender_version=current_blender_version)
 
     lower_path = zip_path.lower()
     if lower_path.endswith(".py"):

@@ -291,6 +291,25 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("lower than 'my_addon.py' bl_info['blender'] minimum" in m for m in messages))
 
+    def test_directory_path_reports_folder_packaging_guidance(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / 'blender_manifest.toml').write_text('id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n')
+            report = diagnose_zip(td)
+            messages = [e.message for e in report.entries]
+            self.assertTrue(any('Selected path is a folder' in m for m in messages))
+            self.assertTrue(any('extension source root' in m.lower() for m in messages))
+            self.assertTrue(any('zip this folder CONTENTS'.lower() in m.lower() for m in messages))
+
+    def test_directory_path_without_markers_errors_cleanly(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / 'README.md').write_text('docs')
+            report = diagnose_zip(td)
+            messages = [e.message for e in report.entries]
+            self.assertTrue(any('Selected path is a folder' in m for m in messages))
+            self.assertTrue(any('Could not find install markers' in m for m in messages))
+
 
 if __name__ == "__main__":
     unittest.main()

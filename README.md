@@ -5,6 +5,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 ## What it does
 
 - Analyze a selected extension/add-on package (`.zip` or legacy single-file `.py`)
+- Diagnose unpacked add-on/extension folders and tell users exactly what to zip (common "selected folder instead of install ZIP" mistake)
 - Detect if package looks like:
   - Blender extension (`blender_manifest.toml` present)
   - Legacy add-on (`__init__.py` present)
@@ -48,6 +49,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 ## Changelog
 
 ### v0.2 (unreleased)
+- Added folder-path diagnostics for unpacked add-ons/extensions: if users select a directory instead of an install ZIP, Doctor now explains why install fails and points to the exact folder contents to zip.
 - Added manifest schema sanity checks for install-critical fields: validates SemVer format for `version`, flags malformed `blender_version_min/max`, and detects invalid/inverted Blender compatibility ranges.
 - Added `id` slug hygiene check (non-empty, no spaces) to catch common manifest mistakes before install.
 - Added packaging-depth diagnostics to catch extra ZIP nesting (common with GitHub/GitLab source downloads).
