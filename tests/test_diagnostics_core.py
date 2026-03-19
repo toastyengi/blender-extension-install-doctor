@@ -310,6 +310,26 @@ class DiagnoseZipTests(unittest.TestCase):
             self.assertTrue(any('Selected path is a folder' in m for m in messages))
             self.assertTrue(any('Could not find install markers' in m for m in messages))
 
+    def test_errors_when_legacy_init_missing_bl_info(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": "print('no addon metadata')\n",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        errors = [e.message for e in report.entries if e.level == "ERROR"]
+        self.assertTrue(any("missing bl_info" in m for m in errors))
+
+    def test_warns_when_legacy_bl_info_missing_blender_tuple(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "version": (1, 0, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("missing 'blender' compatibility tuple" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

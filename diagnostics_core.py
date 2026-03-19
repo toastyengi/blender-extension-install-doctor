@@ -538,7 +538,21 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                         else:
                             report.add("OK", "Current Blender version satisfies legacy bl_info minimum")
                 else:
-                    report.add("INFO", f"Legacy compatibility check skipped: {legacy_err}")
+                    if legacy_err == "bl_info assignment not found":
+                        report.add(
+                            "ERROR",
+                            "Legacy add-on __init__.py is missing bl_info, so Blender may not recognize it as an installable add-on.",
+                        )
+                        report.add(
+                            "INFO",
+                            "Fix hint: add a valid bl_info dictionary near the top of __init__.py (including at least name/version/blender).",
+                        )
+                    elif legacy_err and "Could not parse __init__.py" in legacy_err:
+                        report.add("ERROR", f"Legacy add-on metadata parse failed: {legacy_err}")
+                    elif legacy_err:
+                        report.add("WARNING", f"Legacy compatibility check skipped: {legacy_err}")
+                    else:
+                        report.add("INFO", "Legacy compatibility check skipped.")
 
             if has_single_file_addon and not has_manifest:
                 min_depth = min(single_file_depths)
