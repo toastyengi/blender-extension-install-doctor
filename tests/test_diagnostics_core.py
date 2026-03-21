@@ -330,6 +330,25 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("missing 'blender' compatibility tuple" in m for m in warnings))
 
+    def test_directory_root_manifest_gets_schema_and_version_checks(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / 'blender_manifest.toml').write_text('id="my addon"\nname="A"\nversion="bad"\nblender_version_min="5.1.0"\n')
+            report = diagnose_zip(td, current_blender_version="5.0.0")
+            messages = [e.message for e in report.entries]
+            self.assertTrue(any("Found and parsed blender_manifest.toml" in m for m in messages))
+            self.assertTrue(any("Manifest 'id' should be a non-empty slug without spaces" in m for m in messages))
+            self.assertTrue(any("Manifest 'version' should be SemVer" in m for m in messages))
+            self.assertTrue(any("lower than manifest blender_version_min" in m for m in messages))
+
+    def test_directory_legacy_root_init_missing_bl_info_reports_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / '__init__.py').write_text("print('no metadata')\n")
+            report = diagnose_zip(td)
+            errors = [e.message for e in report.entries if e.level == "ERROR"]
+            self.assertTrue(any("missing bl_info metadata" in m for m in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

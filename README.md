@@ -74,6 +74,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added clear error guidance when a selected `.py` lacks `bl_info`, reducing false "invalid ZIP" confusion.
 - Reduced false-positive warnings for valid legacy add-ons by suppressing "missing extension manifest" noise when legacy markers are present.
 - Added explicit legacy metadata diagnostics: raises an error when `__init__.py` lacks `bl_info` and warns when `bl_info` exists but omits Blender compatibility tuple.
+- Upgraded folder-mode diagnosis (when users select an unpacked directory): now parses root `blender_manifest.toml` for schema/compatibility checks and validates root legacy `__init__.py` metadata (`bl_info`) with clearer compatibility errors.
 
 ## Next milestones
 

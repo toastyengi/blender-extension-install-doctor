@@ -187,6 +187,83 @@ def _read_manifest(zf: zipfile.ZipFile):
         return None, f"Manifest parse error: {e}"
 
 
+def _validate_manifest(report: Report, manifest: dict, current_blender_version: Optional[str] = None):
+    required_fields = ["id", "version", "name"]
+    missing = [k for k in required_fields if k not in manifest]
+    if missing:
+        report.add("ERROR", f"Manifest missing required fields: {', '.join(missing)}")
+    else:
+        report.add("OK", "Manifest has required base fields (id, version, name)")
+
+        addon_id = str(manifest.get("id", "")).strip()
+        if not addon_id or any(ch.isspace() for ch in addon_id):
+            report.add("ERROR", "Manifest 'id' should be a non-empty slug without spaces.")
+
+        manifest_version = manifest.get("version")
+        if not _looks_like_semver(str(manifest_version)):
+            report.add(
+                "ERROR",
+                f"Manifest 'version' should be SemVer (x.y.z). Got: {manifest_version}",
+            )
+        else:
+            report.add("OK", f"Manifest version format looks valid: {manifest_version}")
+
+    blender_version_min = manifest.get("blender_version_min")
+    min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
+    if not blender_version_min:
+        report.add("WARNING", "Manifest missing blender_version_min")
+    elif min_v is None:
+        report.add("ERROR", f"Manifest blender_version_min is not parseable: {blender_version_min}")
+    else:
+        report.add("OK", f"blender_version_min = {blender_version_min}")
+
+    blender_version_max = manifest.get("blender_version_max")
+    max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
+    if blender_version_max:
+        if max_v is None:
+            report.add("ERROR", f"Manifest blender_version_max is not parseable: {blender_version_max}")
+        else:
+            report.add("OK", f"blender_version_max = {blender_version_max}")
+
+    if min_v is not None and max_v is not None and max_v < min_v:
+        report.add(
+            "ERROR",
+            "Manifest declares blender_version_max lower than blender_version_min; compatibility range is invalid.",
+        )
+
+    if min_v is not None and max_v is not None and min_v == max_v:
+        report.add("INFO", "Manifest targets exactly one Blender version (min == max).")
+
+    if current_blender_version:
+        current_v = _parse_version_tuple(current_blender_version)
+        if current_v is None:
+            report.add(
+                "INFO",
+                f"Could not parse current Blender version '{current_blender_version}' for compatibility check.",
+            )
+            return
+
+        report.add("INFO", f"Current Blender version (for check): {current_blender_version}")
+        if min_v is not None and current_v < min_v:
+            report.add(
+                "ERROR",
+                "Current Blender version is lower than manifest blender_version_min; installation/runtime issues are likely.",
+            )
+            report.add(
+                "INFO",
+                f"Pinning hint: this package targets Blender >= {_fmt_version(min_v)}. Upgrade Blender or use an older add-on release compatible with {_fmt_version(current_v)}.",
+            )
+        if max_v is not None and current_v > max_v:
+            report.add(
+                "WARNING",
+                "Current Blender version is higher than manifest blender_version_max; addon may be unsupported.",
+            )
+            report.add(
+                "INFO",
+                f"Pinning hint: declared compatible Blender range is {_fmt_version(min_v) if min_v else '?'} to {_fmt_version(max_v)}. Use a Blender version <= {_fmt_version(max_v)} or find a newer add-on release.",
+            )
+
+
 def _extract_legacy_blender_min_from_source(py_source: str) -> Tuple[Optional[Tuple[int, ...]], Optional[str]]:
     try:
         module = ast.parse(py_source)
@@ -361,6 +438,16 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
         if root_manifest:
             report.add('INFO', 'Folder appears to be an extension source root (blender_manifest.toml at folder root).')
             report.add('INFO', 'Quick fix: zip this folder CONTENTS (not the parent folder), then install via Preferences > Extensions > Install from Disk.')
+            if tomllib is None:
+                report.add('WARNING', 'tomllib not available in this Blender Python build; manifest content checks skipped.')
+            else:
+                try:
+                    manifest_data = (base / 'blender_manifest.toml').read_text(encoding='utf-8', errors='replace')
+                    manifest = tomllib.loads(manifest_data)
+                    report.add('OK', 'Found and parsed blender_manifest.toml')
+                    _validate_manifest(report, manifest, current_blender_version=current_blender_version)
+                except Exception as e:
+                    report.add('ERROR', f"Manifest parse error: {e}")
         else:
             report.add('WARNING', 'Found blender_manifest.toml only in subfolder(s), not folder root.')
             report.add('INFO', f"Manifest location(s): {', '.join(manifest_paths)}")
@@ -375,6 +462,27 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
             report.add('WARNING', 'Legacy __init__.py found only in subfolder(s).')
             report.add('INFO', f"Add-on root candidate(s): {', '.join(sorted({str(Path(p).parent) for p in init_paths}))}")
             report.add('INFO', 'Quick fix: zip the folder that directly contains __init__.py.')
+
+        preferred_init = '__init__.py' if root_init else init_paths[0]
+        try:
+            source = (base / preferred_init).read_text(encoding='utf-8', errors='replace')
+            min_v, err = _extract_legacy_blender_min_from_source(source)
+            if min_v is not None:
+                report.add('OK', f"Legacy bl_info minimum Blender version: {_fmt_version(min_v)}")
+                if current_blender_version:
+                    current_v = _parse_version_tuple(current_blender_version)
+                    if current_v is not None and current_v < min_v:
+                        report.add('ERROR', "Current Blender version is lower than legacy bl_info['blender'] minimum; add-on is likely incompatible.")
+                    elif current_v is not None:
+                        report.add('OK', 'Current Blender version satisfies legacy bl_info minimum')
+            elif err and 'bl_info assignment not found' in err:
+                report.add('ERROR', "Legacy __init__.py appears to be missing bl_info metadata (required for Blender add-ons).")
+            elif err and "missing 'blender' compatibility tuple" in err:
+                report.add('WARNING', "Legacy bl_info found but missing 'blender' compatibility tuple.")
+            elif err:
+                report.add('WARNING', f"Could not fully parse legacy __init__.py metadata: {err}")
+        except Exception as e:
+            report.add('WARNING', f"Could not read legacy __init__.py for metadata checks: {e}")
 
     if has_single and not has_manifest:
         valid_single = [p for p, v, _e in single_file_addons if v is not None]
@@ -677,87 +785,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                     "Recommended install path: Edit > Preferences > Extensions > Install from Disk (extension package).",
                 )
 
-                required_fields = ["id", "version", "name"]
-                missing = [k for k in required_fields if k not in manifest]
-                if missing:
-                    report.add("ERROR", f"Manifest missing required fields: {', '.join(missing)}")
-                else:
-                    report.add("OK", "Manifest has required base fields (id, version, name)")
-
-                    addon_id = str(manifest.get("id", "")).strip()
-                    if not addon_id or any(ch.isspace() for ch in addon_id):
-                        report.add("ERROR", "Manifest 'id' should be a non-empty slug without spaces.")
-
-                    manifest_version = manifest.get("version")
-                    if not _looks_like_semver(str(manifest_version)):
-                        report.add(
-                            "ERROR",
-                            f"Manifest 'version' should be SemVer (x.y.z). Got: {manifest_version}",
-                        )
-                    else:
-                        report.add("OK", f"Manifest version format looks valid: {manifest_version}")
-
-                blender_version_min = manifest.get("blender_version_min")
-                min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
-                if not blender_version_min:
-                    report.add("WARNING", "Manifest missing blender_version_min")
-                elif min_v is None:
-                    report.add("ERROR", f"Manifest blender_version_min is not parseable: {blender_version_min}")
-                else:
-                    report.add("OK", f"blender_version_min = {blender_version_min}")
-
-                blender_version_max = manifest.get("blender_version_max")
-                max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
-                if blender_version_max:
-                    if max_v is None:
-                        report.add("ERROR", f"Manifest blender_version_max is not parseable: {blender_version_max}")
-                    else:
-                        report.add("OK", f"blender_version_max = {blender_version_max}")
-
-                if min_v is not None and max_v is not None and max_v < min_v:
-                    report.add(
-                        "ERROR",
-                        "Manifest declares blender_version_max lower than blender_version_min; compatibility range is invalid.",
-                    )
-
-                if min_v is not None and max_v is not None and min_v == max_v:
-                    report.add("INFO", "Manifest targets exactly one Blender version (min == max).")
-
-                if current_blender_version:
-                    current_v = _parse_version_tuple(current_blender_version)
-                    min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
-                    max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
-
-                if current_blender_version:
-                    current_v = _parse_version_tuple(current_blender_version)
-                    min_v = _parse_version_tuple(str(blender_version_min)) if blender_version_min else None
-                    max_v = _parse_version_tuple(str(blender_version_max)) if blender_version_max else None
-
-                    if current_v is None:
-                        report.add(
-                            "INFO",
-                            f"Could not parse current Blender version '{current_blender_version}' for compatibility check.",
-                        )
-                    else:
-                        report.add("INFO", f"Current Blender version (for check): {current_blender_version}")
-                        if min_v is not None and current_v < min_v:
-                            report.add(
-                                "ERROR",
-                                "Current Blender version is lower than manifest blender_version_min; installation/runtime issues are likely.",
-                            )
-                            report.add(
-                                "INFO",
-                                f"Pinning hint: this package targets Blender >= {_fmt_version(min_v)}. Upgrade Blender or use an older add-on release compatible with {_fmt_version(current_v)}.",
-                            )
-                        if max_v is not None and current_v > max_v:
-                            report.add(
-                                "WARNING",
-                                "Current Blender version is higher than manifest blender_version_max; addon may be unsupported.",
-                            )
-                            report.add(
-                                "INFO",
-                                f"Pinning hint: declared compatible Blender range is {_fmt_version(min_v) if min_v else '?'} to {_fmt_version(max_v)}. Use a Blender version <= {_fmt_version(max_v)} or find a newer add-on release.",
-                            )
+                _validate_manifest(report, manifest, current_blender_version=current_blender_version)
 
             if len(top_dirs) > 1:
                 report.add(
