@@ -281,6 +281,25 @@ class DiagnoseZipTests(unittest.TestCase):
         messages = [e.message for e in report.entries]
         self.assertTrue(any("not a .zip or .py" in m for m in messages))
 
+    def test_reports_actionable_error_for_rar_archive(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".rar", delete=False)
+        tmp.write(b'not really rar data')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name)
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("unsupported archive format '.rar'" in m for m in messages))
+        self.assertTrue(any("extract this archive and create a .zip" in m.lower() for m in messages))
+
+    def test_reports_actionable_error_for_tar_gz_archive(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
+        tmp.write(b'not really tar data')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name)
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("unsupported archive format '.tar.gz'" in m for m in messages))
+
     def test_errors_when_current_blender_below_single_file_bl_info_min(self):
         zpath = self._zip_with(
             {

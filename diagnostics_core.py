@@ -90,6 +90,15 @@ def _looks_like_source_archive_name(zip_path: str) -> bool:
     return any(token in name for token in source_tokens)
 
 
+def _detect_unsupported_archive(path: str) -> Optional[str]:
+    name = Path(path).name.lower()
+    unsupported_exts = [".rar", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz"]
+    for ext in unsupported_exts:
+        if name.endswith(ext):
+            return ext
+    return None
+
+
 def _embedded_zip_candidates(names: List[str]) -> List[str]:
     return sorted([n for n in names if n.lower().endswith(".zip")])
 
@@ -519,6 +528,18 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
     lower_path = zip_path.lower()
     if lower_path.endswith(".py"):
         return _diagnose_single_file_addon(zip_path, current_blender_version=current_blender_version)
+
+    unsupported_ext = _detect_unsupported_archive(lower_path)
+    if unsupported_ext:
+        report.add(
+            "ERROR",
+            f"Selected package uses unsupported archive format '{unsupported_ext}'. Blender Install from Disk expects a .zip package (or a single .py add-on file).",
+        )
+        report.add(
+            "INFO",
+            "Fix hint: extract this archive and create a .zip where blender_manifest.toml or add-on __init__.py/.py is in the expected install location.",
+        )
+        return report
 
     if not lower_path.endswith(".zip"):
         report.add("ERROR", "Selected file is not a .zip or .py add-on package")
