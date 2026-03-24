@@ -349,6 +349,27 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("missing 'blender' compatibility tuple" in m for m in warnings))
 
+    def test_accepts_annotated_bl_info_in_legacy_init(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info: dict = {"name": "A", "blender": (4, 1, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath), current_blender_version="4.2.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Legacy bl_info minimum Blender version: 4.1.0" in m for m in messages))
+        self.assertFalse(any("missing bl_info" in m.lower() for m in messages))
+
+    def test_accepts_annotated_bl_info_in_direct_single_file_addon(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        tmp.write(b'bl_info: dict = {"name": "A", "blender": (4, 0, 0)}\n')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name, current_blender_version="4.2.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Detected legacy single-file add-on" in m for m in messages))
+        self.assertTrue(any("minimum Blender version: 4.0.0" in m for m in messages))
+
     def test_directory_root_manifest_gets_schema_and_version_checks(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

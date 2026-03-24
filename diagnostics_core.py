@@ -280,30 +280,44 @@ def _extract_legacy_blender_min_from_source(py_source: str) -> Tuple[Optional[Tu
         return None, f"Could not parse __init__.py: {e}"
 
     for node in module.body:
+        value_node = None
+
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "bl_info":
-                    try:
-                        data = ast.literal_eval(node.value)
-                    except Exception as e:
-                        return None, f"Could not evaluate bl_info dictionary: {e}"
+                    value_node = node.value
+                    break
 
-                    if not isinstance(data, dict):
-                        return None, "bl_info exists but is not a dictionary literal"
+        # Support modern annotated style used in some add-ons:
+        # bl_info: dict = {...}
+        if value_node is None and isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "bl_info":
+                value_node = node.value
 
-                    blender_value = data.get("blender")
-                    if blender_value is None:
-                        return None, "bl_info missing 'blender' compatibility tuple"
+        if value_node is None:
+            continue
 
-                    if isinstance(blender_value, (tuple, list)) and blender_value:
-                        out = []
-                        for p in blender_value:
-                            if not isinstance(p, int):
-                                return None, "bl_info['blender'] should contain integers"
-                            out.append(p)
-                        return tuple(out), None
+        try:
+            data = ast.literal_eval(value_node)
+        except Exception as e:
+            return None, f"Could not evaluate bl_info dictionary: {e}"
 
-                    return None, "bl_info['blender'] is not a tuple/list"
+        if not isinstance(data, dict):
+            return None, "bl_info exists but is not a dictionary literal"
+
+        blender_value = data.get("blender")
+        if blender_value is None:
+            return None, "bl_info missing 'blender' compatibility tuple"
+
+        if isinstance(blender_value, (tuple, list)) and blender_value:
+            out = []
+            for p in blender_value:
+                if not isinstance(p, int):
+                    return None, "bl_info['blender'] should contain integers"
+                out.append(p)
+            return tuple(out), None
+
+        return None, "bl_info['blender'] is not a tuple/list"
 
     return None, "bl_info assignment not found"
 
