@@ -389,6 +389,25 @@ class DiagnoseZipTests(unittest.TestCase):
             errors = [e.message for e in report.entries if e.level == "ERROR"]
             self.assertTrue(any("missing bl_info metadata" in m for m in errors))
 
+    def test_flags_runtime_risk_for_bgl_import_in_zip(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\nimport bgl\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("Detected 'bgl' import" in m for m in warnings))
+
+    def test_flags_runtime_risk_for_distutils_in_direct_single_file(self):
+        tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        tmp.write(b'bl_info = {"name": "A", "blender": (4, 0, 0)}\nimport distutils\n')
+        tmp.close()
+
+        report = diagnose_zip(tmp.name)
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("Detected 'distutils' import" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -148,6 +148,75 @@ def _scan_embedded_zip_signals(zf: zipfile.ZipFile, embedded_zip_paths: List[str
     return signals
 
 
+RUNTIME_RISK_SIGNATURES = [
+    {
+        "pattern": re.compile(r"(^|\n)\s*(from\s+bgl\s+import\b|import\s+bgl\b)", re.MULTILINE),
+        "message": "Detected 'bgl' import(s). Blender 4.x/5.x commonly breaks legacy bgl-based drawing code.",
+        "hint": "Prefer gpu module + gpu_extras replacement APIs (or install an addon release updated for Blender 4/5).",
+    },
+    {
+        "pattern": re.compile(r"(^|\n)\s*(from\s+distutils\s+import\b|import\s+distutils\b)", re.MULTILINE),
+        "message": "Detected 'distutils' import(s). Python 3.12+ removed distutils and Blender 5.x builds may fail at runtime.",
+        "hint": "Replace distutils usage with setuptools/packaging equivalents or use a Blender-compatible addon release.",
+    },
+    {
+        "pattern": re.compile(r"(^|\n)\s*(from\s+imp\s+import\b|import\s+imp\b)", re.MULTILINE),
+        "message": "Detected deprecated 'imp' module import(s). Modern Python versions removed imp, causing addon startup errors.",
+        "hint": "Switch to importlib APIs (importlib.util/importlib.machinery) in updated addon code.",
+    },
+]
+
+
+def _runtime_risk_hits_in_source(source: str) -> List[Tuple[str, str]]:
+    hits: List[Tuple[str, str]] = []
+    for sig in RUNTIME_RISK_SIGNATURES:
+        if sig["pattern"].search(source):
+            hits.append((sig["message"], sig["hint"]))
+    return hits
+
+
+def _scan_zip_runtime_risks(zf: zipfile.ZipFile) -> List[Tuple[str, str]]:
+    findings: List[Tuple[str, str]] = []
+    seen = set()
+    py_names = [n for n in zf.namelist() if n.endswith(".py") and not n.endswith("/")]
+    for path in py_names[:300]:
+        try:
+            source = zf.read(path).decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        for msg, hint in _runtime_risk_hits_in_source(source):
+            key = (msg, hint)
+            if key not in seen:
+                seen.add(key)
+                findings.append(key)
+    return findings
+
+
+def _scan_directory_runtime_risks(dir_path: str) -> List[Tuple[str, str]]:
+    findings: List[Tuple[str, str]] = []
+    seen = set()
+    base = Path(dir_path)
+    for idx, path in enumerate(sorted(base.rglob("*.py"))):
+        if idx >= 300:
+            break
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for msg, hint in _runtime_risk_hits_in_source(source):
+            key = (msg, hint)
+            if key not in seen:
+                seen.add(key)
+                findings.append(key)
+    return findings
+
+
+def _add_runtime_risk_guidance(report: Report, findings: List[Tuple[str, str]]):
+    for msg, hint in findings:
+        report.add("WARNING", msg)
+        report.add("INFO", f"Runtime compatibility hint: {hint}")
+
+
 def _parse_version_tuple(value: str) -> Optional[Tuple[int, ...]]:
     if not value:
         return None
@@ -407,6 +476,7 @@ def _diagnose_single_file_addon(py_path: str, current_blender_version: Optional[
         else:
             report.add("OK", "Current Blender version satisfies single-file bl_info minimum")
 
+    _add_runtime_risk_guidance(report, _runtime_risk_hits_in_source(source))
     return report
 
 
@@ -523,6 +593,7 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
                 if min_v is not None and current_v < min_v:
                     report.add('ERROR', f"Current Blender version is lower than '{path}' bl_info['blender'] minimum.")
 
+    _add_runtime_risk_guidance(report, _scan_directory_runtime_risks(dir_path))
     return report
 
 def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
@@ -821,6 +892,8 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 )
 
                 _validate_manifest(report, manifest, current_blender_version=current_blender_version)
+
+            _add_runtime_risk_guidance(report, _scan_zip_runtime_risks(zf))
 
             if len(top_dirs) > 1:
                 report.add(

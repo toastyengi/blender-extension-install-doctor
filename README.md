@@ -25,6 +25,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
   - `blender_version_min` presence
   - compatibility warning/error against current Blender version when possible
 - For legacy add-ons, reads `bl_info["blender"]` from `__init__.py` **and single-file `.py` add-ons**, then checks minimum Blender compatibility when current Blender version is known
+- Scans addon Python files for high-risk runtime breakage signatures (`bgl`, `distutils`, `imp`) and provides compatibility migration hints
 - Show clear findings in a panel (ERROR / WARNING / OK / INFO)
 
 ## Install
@@ -77,6 +78,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added explicit legacy metadata diagnostics: raises an error when `__init__.py` lacks `bl_info` and warns when `bl_info` exists but omits Blender compatibility tuple.
 - Upgraded folder-mode diagnosis (when users select an unpacked directory): now parses root `blender_manifest.toml` for schema/compatibility checks and validates root legacy `__init__.py` metadata (`bl_info`) with clearer compatibility errors.
 - Added support for annotated legacy metadata declarations (`bl_info: dict = {...}`) in both zipped add-ons and direct single-file `.py` add-ons, reducing false “missing bl_info” errors.
+- Added runtime-compatibility risk scanning for common Blender/Python breakpoints (`import bgl`, `import distutils`, `import imp`) with actionable migration hints, helping users diagnose install-success-but-runtime-fail scenarios.
 
 ## Next milestones
 
