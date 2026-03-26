@@ -79,6 +79,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Upgraded folder-mode diagnosis (when users select an unpacked directory): now parses root `blender_manifest.toml` for schema/compatibility checks and validates root legacy `__init__.py` metadata (`bl_info`) with clearer compatibility errors.
 - Added support for annotated legacy metadata declarations (`bl_info: dict = {...}`) in both zipped add-ons and direct single-file `.py` add-ons, reducing false “missing bl_info” errors.
 - Added runtime-compatibility risk scanning for common Blender/Python breakpoints (`import bgl`, `import distutils`, `import imp`) with actionable migration hints, helping users diagnose install-success-but-runtime-fail scenarios.
+- Added import-time freeze-risk diagnostics for top-level blocking calls (`time.sleep`, network fetches, subprocess calls) that can hang Blender while enabling an add-on.
 
 ## Next milestones
 

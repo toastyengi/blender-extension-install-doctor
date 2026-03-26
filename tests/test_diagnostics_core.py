@@ -408,6 +408,26 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("Detected 'distutils' import" in m for m in warnings))
 
+    def test_flags_top_level_sleep_as_enable_freeze_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\nimport time\ntime.sleep(2)\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("time.sleep" in m and "module import" in m for m in warnings))
+
+    def test_does_not_flag_sleep_inside_function(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\nimport time\n\ndef later():\n    time.sleep(2)\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("time.sleep" in m and "module import" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

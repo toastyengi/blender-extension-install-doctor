@@ -167,11 +167,53 @@ RUNTIME_RISK_SIGNATURES = [
 ]
 
 
+def _call_name(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _call_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return None
+
+
+def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
+    risky_calls = {
+        "time.sleep": "Detected top-level 'time.sleep(...)' call during module import. This can freeze Blender while enabling the add-on.",
+        "requests.get": "Detected top-level HTTP request call during module import. Network stalls can freeze Blender while enabling the add-on.",
+        "requests.post": "Detected top-level HTTP request call during module import. Network stalls can freeze Blender while enabling the add-on.",
+        "urllib.request.urlopen": "Detected top-level URL fetch during module import. Slow connections can freeze Blender while enabling the add-on.",
+        "subprocess.run": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
+        "subprocess.call": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
+        "subprocess.check_output": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
+        "subprocess.Popen": "Detected top-level subprocess launch during module import. This may cause enable-time instability.",
+    }
+    hint = "Move blocking work into operators/timers/background tasks and keep module import + register() fast/non-blocking."
+
+    try:
+        tree = ast.parse(source)
+    except Exception:
+        return []
+
+    hits: List[Tuple[str, str]] = []
+    seen = set()
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Call):
+                name = _call_name(node.func)
+                if name in risky_calls and name not in seen:
+                    seen.add(name)
+                    hits.append((risky_calls[name], hint))
+    return hits
+
+
 def _runtime_risk_hits_in_source(source: str) -> List[Tuple[str, str]]:
     hits: List[Tuple[str, str]] = []
     for sig in RUNTIME_RISK_SIGNATURES:
         if sig["pattern"].search(source):
             hits.append((sig["message"], sig["hint"]))
+    hits.extend(_top_level_blocking_call_hits(source))
     return hits
 
 
