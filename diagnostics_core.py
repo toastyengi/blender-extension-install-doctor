@@ -182,10 +182,14 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
         "requests.get": "Detected top-level HTTP request call during module import. Network stalls can freeze Blender while enabling the add-on.",
         "requests.post": "Detected top-level HTTP request call during module import. Network stalls can freeze Blender while enabling the add-on.",
         "urllib.request.urlopen": "Detected top-level URL fetch during module import. Slow connections can freeze Blender while enabling the add-on.",
+        "urllib.request.urlretrieve": "Detected top-level URL download during module import. Network stalls can freeze Blender while enabling the add-on.",
+        "socket.create_connection": "Detected top-level socket connection attempt during module import. Network timeouts can freeze Blender while enabling the add-on.",
         "subprocess.run": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
         "subprocess.call": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
         "subprocess.check_output": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
         "subprocess.Popen": "Detected top-level subprocess launch during module import. This may cause enable-time instability.",
+        "thread.join": "Detected top-level thread join during module import. Waiting for threads at import time can freeze add-on enable.",
+        "asyncio.run": "Detected top-level asyncio.run(...) call during module import. Long async startup tasks can block add-on enable.",
     }
     hint = "Move blocking work into operators/timers/background tasks and keep module import + register() fast/non-blocking."
 

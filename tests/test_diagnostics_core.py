@@ -428,6 +428,26 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertFalse(any("time.sleep" in m and "module import" in m for m in warnings))
 
+    def test_flags_top_level_socket_connection_as_enable_freeze_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\nimport socket\nsocket.create_connection(("example.com", 443), timeout=5)\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("socket connection attempt" in m and "module import" in m for m in warnings))
+
+    def test_flags_top_level_asyncio_run_as_enable_blocking_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\nimport asyncio\nasyncio.run(asyncio.sleep(0.1))\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("asyncio.run" in m and "module import" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

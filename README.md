@@ -80,6 +80,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added support for annotated legacy metadata declarations (`bl_info: dict = {...}`) in both zipped add-ons and direct single-file `.py` add-ons, reducing false “missing bl_info” errors.
 - Added runtime-compatibility risk scanning for common Blender/Python breakpoints (`import bgl`, `import distutils`, `import imp`) with actionable migration hints, helping users diagnose install-success-but-runtime-fail scenarios.
 - Added import-time freeze-risk diagnostics for top-level blocking calls (`time.sleep`, network fetches, subprocess calls) that can hang Blender while enabling an add-on.
+- Expanded enable-freeze diagnostics to catch more real-world startup hangs: top-level `socket.create_connection`, `urllib.request.urlretrieve`, `thread.join`, and `asyncio.run` calls now raise targeted warnings with non-blocking migration guidance.
 
 ## Next milestones
 
