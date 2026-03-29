@@ -81,6 +81,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added runtime-compatibility risk scanning for common Blender/Python breakpoints (`import bgl`, `import distutils`, `import imp`) with actionable migration hints, helping users diagnose install-success-but-runtime-fail scenarios.
 - Added import-time freeze-risk diagnostics for top-level blocking calls (`time.sleep`, network fetches, subprocess calls) that can hang Blender while enabling an add-on.
 - Expanded enable-freeze diagnostics to catch more real-world startup hangs: top-level `socket.create_connection`, `urllib.request.urlretrieve`, `thread.join`, and `asyncio.run` calls now raise targeted warnings with non-blocking migration guidance.
+- Added legacy lifecycle-hook diagnostics: when a `.py`/`__init__.py` declares `bl_info` but omits `register()` and/or `unregister()`, Doctor now warns with fix guidance for the common "installs but doesn't enable/work" failure mode.
 
 ## Next milestones
 

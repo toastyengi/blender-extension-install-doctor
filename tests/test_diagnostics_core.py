@@ -448,6 +448,32 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("asyncio.run" in m and "module import" in m for m in warnings))
 
+    def test_flags_missing_register_unregister_hooks_in_legacy_addon(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": 'bl_info = {"name": "A", "blender": (4, 0, 0)}\n',
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("no module-level register()" in m for m in warnings))
+        self.assertTrue(any("no module-level unregister()" in m for m in warnings))
+
+    def test_does_not_flag_missing_register_when_hooks_imported(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'from .ops import register, unregister\n'
+                ),
+                "my_addon/ops.py": "def register():\n    pass\n\ndef unregister():\n    pass\n",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("no module-level register()" in m for m in warnings))
+        self.assertFalse(any("no module-level unregister()" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

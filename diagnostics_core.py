@@ -212,12 +212,79 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
     return hits
 
 
+def _legacy_register_hook_risk_in_source(source: str) -> List[Tuple[str, str]]:
+    """Warn when a legacy addon declares bl_info but no register/unregister hooks.
+
+    This catches a common "installs but doesn't show/work" failure mode.
+    """
+    try:
+        tree = ast.parse(source)
+    except Exception:
+        return []
+
+    has_bl_info = False
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "bl_info":
+                    has_bl_info = True
+                    break
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "bl_info":
+                has_bl_info = True
+        if has_bl_info:
+            break
+
+    if not has_bl_info:
+        return []
+
+    has_register = False
+    has_unregister = False
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == "register":
+                has_register = True
+            elif node.name == "unregister":
+                has_unregister = True
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "register":
+                    has_register = True
+                elif isinstance(target, ast.Name) and target.id == "unregister":
+                    has_unregister = True
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "register":
+                has_register = True
+            elif isinstance(node.target, ast.Name) and node.target.id == "unregister":
+                has_unregister = True
+        elif isinstance(node, ast.ImportFrom):
+            imported = {alias.name for alias in node.names}
+            if "register" in imported:
+                has_register = True
+            if "unregister" in imported:
+                has_unregister = True
+
+    findings: List[Tuple[str, str]] = []
+    if not has_register:
+        findings.append((
+            "Legacy add-on metadata (bl_info) detected, but no module-level register() hook was found.",
+            "Ensure the add-on exposes register()/unregister() at module level (or imports/re-exports them) so Blender can enable it.",
+        ))
+    if not has_unregister:
+        findings.append((
+            "Legacy add-on metadata (bl_info) detected, but no module-level unregister() hook was found.",
+            "Add an unregister() hook to avoid disable/reload issues in Blender Preferences > Add-ons.",
+        ))
+    return findings
+
+
 def _runtime_risk_hits_in_source(source: str) -> List[Tuple[str, str]]:
     hits: List[Tuple[str, str]] = []
     for sig in RUNTIME_RISK_SIGNATURES:
         if sig["pattern"].search(source):
             hits.append((sig["message"], sig["hint"]))
     hits.extend(_top_level_blocking_call_hits(source))
+    hits.extend(_legacy_register_hook_risk_in_source(source))
     return hits
 
 
