@@ -192,6 +192,7 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
         "asyncio.run": "Detected top-level asyncio.run(...) call during module import. Long async startup tasks can block add-on enable.",
     }
     hint = "Move blocking work into operators/timers/background tasks and keep module import + register() fast/non-blocking."
+    context_hint = "Avoid bpy.ops calls during module import. Move context-dependent operator calls into register(), operators, or UI callbacks after Blender context is ready."
 
     try:
         tree = ast.parse(source)
@@ -209,6 +210,12 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
                 if name in risky_calls and name not in seen:
                     seen.add(name)
                     hits.append((risky_calls[name], hint))
+                if name and name.startswith("bpy.ops.") and "bpy.ops.*" not in seen:
+                    seen.add("bpy.ops.*")
+                    hits.append((
+                        "Detected top-level 'bpy.ops.*' call during module import. Operator calls at import-time often fail with context errors or break add-on enable.",
+                        context_hint,
+                    ))
     return hits
 
 

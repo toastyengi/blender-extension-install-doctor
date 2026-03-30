@@ -448,6 +448,35 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("asyncio.run" in m and "module import" in m for m in warnings))
 
+    def test_flags_top_level_bpy_ops_call_as_context_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import bpy\n'
+                    'bpy.ops.object.select_all(action="SELECT")\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("bpy.ops" in m and "module import" in m for m in warnings))
+
+    def test_does_not_flag_bpy_ops_when_called_inside_function(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import bpy\n\n'
+                    'def run_later():\n'
+                    '    bpy.ops.object.select_all(action="SELECT")\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("bpy.ops" in m and "module import" in m for m in warnings))
+
     def test_flags_missing_register_unregister_hooks_in_legacy_addon(self):
         zpath = self._zip_with(
             {
