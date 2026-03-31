@@ -193,6 +193,7 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
     }
     hint = "Move blocking work into operators/timers/background tasks and keep module import + register() fast/non-blocking."
     context_hint = "Avoid bpy.ops calls during module import. Move context-dependent operator calls into register(), operators, or UI callbacks after Blender context is ready."
+    bpy_context_hint = "Avoid touching bpy.context during module import. Read context inside operators/panels/register callbacks after Blender UI context exists."
 
     try:
         tree = ast.parse(source)
@@ -215,6 +216,14 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
                     hits.append((
                         "Detected top-level 'bpy.ops.*' call during module import. Operator calls at import-time often fail with context errors or break add-on enable.",
                         context_hint,
+                    ))
+            elif isinstance(node, ast.Attribute):
+                attr_name = _call_name(node)
+                if attr_name and (attr_name == "bpy.context" or attr_name.startswith("bpy.context.")) and "bpy.context.*" not in seen:
+                    seen.add("bpy.context.*")
+                    hits.append((
+                        "Detected top-level 'bpy.context' access during module import. Context can be incomplete at import-time and may break add-on enable/startup.",
+                        bpy_context_hint,
                     ))
     return hits
 

@@ -477,6 +477,35 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertFalse(any("bpy.ops" in m and "module import" in m for m in warnings))
 
+    def test_flags_top_level_bpy_context_access_as_context_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import bpy\n'
+                    'active_name = bpy.context.active_object.name if bpy.context.active_object else ""\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("bpy.context" in m and "module import" in m for m in warnings))
+
+    def test_does_not_flag_bpy_context_when_accessed_inside_function(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import bpy\n\n'
+                    'def get_active_name():\n'
+                    '    return bpy.context.active_object.name if bpy.context.active_object else ""\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("bpy.context" in m and "module import" in m for m in warnings))
+
     def test_flags_missing_register_unregister_hooks_in_legacy_addon(self):
         zpath = self._zip_with(
             {

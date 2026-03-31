@@ -83,6 +83,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Expanded enable-freeze diagnostics to catch more real-world startup hangs: top-level `socket.create_connection`, `urllib.request.urlretrieve`, `thread.join`, and `asyncio.run` calls now raise targeted warnings with non-blocking migration guidance.
 - Added legacy lifecycle-hook diagnostics: when a `.py`/`__init__.py` declares `bl_info` but omits `register()` and/or `unregister()`, Doctor now warns with fix guidance for the common "installs but doesn't enable/work" failure mode.
 - Added import-time context-risk detection for top-level `bpy.ops.*` calls, a common cause of "installed but fails to enable" errors due to missing Blender context during module import.
+- Added import-time context-risk detection for top-level `bpy.context` access, which often breaks enable/startup when add-ons assume an active UI context too early.
 
 ## Next milestones
 
