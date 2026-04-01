@@ -945,6 +945,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                     "Both extension manifest and legacy __init__.py detected. Ensure you install through the intended path to avoid confusion.",
                 )
 
+            installable_inner: List[EmbeddedZipSignal] = []
             if embedded_zip_paths and not has_manifest and not has_init and not has_single_file_addon:
                 report.add(
                     "WARNING",
@@ -989,10 +990,16 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 )
 
             if not has_manifest and not has_init and not has_single_file_addon:
-                report.add(
-                    "ERROR",
-                    "Could not find blender_manifest.toml, __init__.py, or a single-file add-on module with bl_info. This ZIP likely is source/docs, not an installable package.",
-                )
+                if installable_inner:
+                    report.add(
+                        "INFO",
+                        "Outer ZIP is not directly installable, but embedded installable ZIP candidate(s) were found.",
+                    )
+                else:
+                    report.add(
+                        "ERROR",
+                        "Could not find blender_manifest.toml, __init__.py, or a single-file add-on module with bl_info. This ZIP likely is source/docs, not an installable package.",
+                    )
                 if _looks_like_source_archive_name(zip_path):
                     report.add(
                         "INFO",

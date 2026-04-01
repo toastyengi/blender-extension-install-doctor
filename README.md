@@ -71,6 +71,7 @@ First MVP of a Blender plugin that diagnoses extension/add-on install ZIP issues
 - Added nested-depth diagnostics for single-file add-ons and compatibility checks against current Blender version.
 - Added wrapper-archive diagnostics: if a ZIP only contains another ZIP (common double-compressed download pattern), Doctor now points users to the inner install ZIP.
 - Added embedded-inner-ZIP inspection to identify which inner ZIP is actually installable and which install path to use (Extensions vs Add-ons).
+- Reduced false-error noise for wrapper archives: when an outer ZIP has no markers but contains installable inner ZIP(s), Doctor now avoids the generic "not installable" hard error and points directly to the usable inner package.
 - Added direct `.py` analysis so users can diagnose/install legacy single-file add-ons without zipping first.
 - Added clear error guidance when a selected `.py` lacks `bl_info`, reducing false "invalid ZIP" confusion.
 - Added explicit unsupported-archive diagnostics (`.rar`, `.7z`, `.tar.gz`, etc.) with re-packaging guidance, reducing dead-end install attempts when users select non-ZIP downloads.

@@ -72,8 +72,10 @@ class DiagnoseZipTests(unittest.TestCase):
         )
         report = diagnose_zip(str(outer))
         messages = [e.message for e in report.entries]
+        errors = [e.message for e in report.entries if e.level == "ERROR"]
         self.assertTrue(any("Inner ZIP 'bundle/installable.zip' looks installable" in m for m in messages))
         self.assertTrue(any("Extensions > Install from Disk" in m for m in messages))
+        self.assertFalse(any("Could not find blender_manifest.toml" in m for m in errors))
 
     def test_warns_when_multiple_installable_inner_zips_found(self):
         ext_zip = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
