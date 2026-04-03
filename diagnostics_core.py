@@ -346,6 +346,55 @@ def _add_runtime_risk_guidance(report: Report, findings: List[Tuple[str, str]]):
         report.add("INFO", f"Runtime compatibility hint: {hint}")
 
 
+_NATIVE_BINARY_EXTS = (".pyd", ".so", ".dylib")
+
+
+def _scan_zip_native_binaries(zf: zipfile.ZipFile) -> List[str]:
+    return [
+        n for n in zf.namelist()
+        if n.lower().endswith(_NATIVE_BINARY_EXTS) and not n.endswith("/")
+    ]
+
+
+def _scan_directory_native_binaries(dir_path: str) -> List[str]:
+    base = Path(dir_path)
+    out: List[str] = []
+    for p in sorted(base.rglob("*")):
+        if p.is_file() and p.suffix.lower() in _NATIVE_BINARY_EXTS:
+            out.append(p.relative_to(base).as_posix())
+    return out
+
+
+def _add_native_binary_guidance(report: Report, binary_paths: List[str], manifest: Optional[dict] = None):
+    if not binary_paths:
+        return
+
+    sample = ", ".join(binary_paths[:3])
+    more = f" (+{len(binary_paths) - 3} more)" if len(binary_paths) > 3 else ""
+    report.add(
+        "WARNING",
+        f"Detected native binary module(s) in package: {sample}{more}. Cross-platform/version mismatches can cause install-success-but-enable/runtime failures.",
+    )
+    report.add(
+        "INFO",
+        "Runtime compatibility hint: verify add-on build matches your OS/CPU and Blender Python ABI; if unsure, use a release explicitly built for your Blender version.",
+    )
+
+    if manifest is not None:
+        platforms = manifest.get("platforms") if isinstance(manifest, dict) else None
+        if not isinstance(platforms, list) or not platforms:
+            report.add(
+                "WARNING",
+                "Native binaries detected but manifest has no explicit 'platforms' list. Users on other systems may install a package that fails to enable.",
+            )
+            report.add(
+                "INFO",
+                "Runtime compatibility hint: declare supported platforms in blender_manifest.toml and publish per-platform builds when binaries are bundled.",
+            )
+        else:
+            report.add("INFO", f"Manifest platforms declared: {', '.join(str(p) for p in platforms)}")
+
+
 def _parse_version_tuple(value: str) -> Optional[Tuple[int, ...]]:
     if not value:
         return None
@@ -654,6 +703,7 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
     has_manifest = bool(manifest_paths)
     has_init = bool(init_paths)
     has_single = any(v is not None for _p, v, _e in single_file_addons)
+    manifest_for_native: Optional[dict] = None
 
     if has_manifest:
         root_manifest = 'blender_manifest.toml' in manifest_paths
@@ -666,6 +716,7 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
                 try:
                     manifest_data = (base / 'blender_manifest.toml').read_text(encoding='utf-8', errors='replace')
                     manifest = tomllib.loads(manifest_data)
+                    manifest_for_native = manifest
                     report.add('OK', 'Found and parsed blender_manifest.toml')
                     _validate_manifest(report, manifest, current_blender_version=current_blender_version)
                 except Exception as e:
@@ -723,6 +774,7 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
                     report.add('ERROR', f"Current Blender version is lower than '{path}' bl_info['blender'] minimum.")
 
     _add_runtime_risk_guidance(report, _scan_directory_runtime_risks(dir_path))
+    _add_native_binary_guidance(report, _scan_directory_native_binaries(dir_path), manifest=manifest_for_native)
     return report
 
 def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
@@ -1030,6 +1082,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 _validate_manifest(report, manifest, current_blender_version=current_blender_version)
 
             _add_runtime_risk_guidance(report, _scan_zip_runtime_risks(zf))
+            _add_native_binary_guidance(report, _scan_zip_native_binaries(zf), manifest=manifest)
 
             if len(top_dirs) > 1:
                 report.add(

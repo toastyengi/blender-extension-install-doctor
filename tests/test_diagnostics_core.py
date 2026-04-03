@@ -534,6 +534,33 @@ class DiagnoseZipTests(unittest.TestCase):
         self.assertFalse(any("no module-level register()" in m for m in warnings))
         self.assertFalse(any("no module-level unregister()" in m for m in warnings))
 
+    def test_warns_for_native_binary_without_manifest_platforms(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n',
+                "a/bin/native.pyd": "binary",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Detected native binary module" in m for m in messages))
+        self.assertTrue(any("manifest has no explicit 'platforms'" in m for m in messages))
+
+    def test_reports_manifest_platforms_when_native_binary_present(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": (
+                    'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n'
+                    'platforms=["windows-x64"]\n'
+                ),
+                "a/bin/native.pyd": "binary",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Manifest platforms declared: windows-x64" in m for m in messages))
+        self.assertFalse(any("manifest has no explicit 'platforms'" in m for m in messages))
+
 
 if __name__ == "__main__":
     unittest.main()
