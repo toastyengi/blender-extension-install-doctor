@@ -1,12 +1,13 @@
 import ast
 import io
 import os
+import sys
 import zipfile
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 try:
     import tomllib
@@ -304,6 +305,90 @@ def _runtime_risk_hits_in_source(source: str) -> List[Tuple[str, str]]:
     return hits
 
 
+_BLENDER_BUILTIN_MODULES = {
+    "bpy",
+    "bmesh",
+    "mathutils",
+    "gpu",
+    "gpu_extras",
+    "blf",
+    "aud",
+    "idprop",
+    "bpy_extras",
+    "bpy_types",
+    "rna_keymap_ui",
+}
+
+
+def _top_module_name(import_name: str) -> str:
+    return import_name.split(".", 1)[0].strip()
+
+
+def _third_party_import_risks_in_source(source: str, local_modules: Set[str]) -> Set[str]:
+    try:
+        tree = ast.parse(source)
+    except Exception:
+        return set()
+
+    stdlib = set(getattr(sys, "stdlib_module_names", set()))
+    risky: Set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                mod = _top_module_name(alias.name)
+                if not mod:
+                    continue
+                if mod in stdlib or mod in _BLENDER_BUILTIN_MODULES or mod in local_modules:
+                    continue
+                risky.add(mod)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level and node.level > 0:
+                # Relative import is likely internal to add-on package.
+                continue
+            if not node.module:
+                continue
+            mod = _top_module_name(node.module)
+            if not mod:
+                continue
+            if mod in stdlib or mod in _BLENDER_BUILTIN_MODULES or mod in local_modules:
+                continue
+            risky.add(mod)
+
+    return risky
+
+
+def _zip_local_top_modules(zf: zipfile.ZipFile) -> Set[str]:
+    out: Set[str] = set()
+    for n in zf.namelist():
+        if n.endswith("/"):
+            continue
+        parts = [p for p in n.split("/") if p]
+        if not parts:
+            continue
+        top = parts[0]
+        if top.startswith("."):
+            continue
+        if top.endswith(".py"):
+            out.add(top[:-3])
+        else:
+            out.add(top)
+    return out
+
+
+def _directory_local_top_modules(dir_path: str) -> Set[str]:
+    out: Set[str] = set()
+    base = Path(dir_path)
+    for p in base.iterdir():
+        if p.name.startswith("."):
+            continue
+        if p.is_file() and p.suffix == ".py":
+            out.add(p.stem)
+        else:
+            out.add(p.name)
+    return out
+
+
 def _scan_zip_runtime_risks(zf: zipfile.ZipFile) -> List[Tuple[str, str]]:
     findings: List[Tuple[str, str]] = []
     seen = set()
@@ -340,10 +425,55 @@ def _scan_directory_runtime_risks(dir_path: str) -> List[Tuple[str, str]]:
     return findings
 
 
+def _scan_zip_third_party_import_risks(zf: zipfile.ZipFile) -> Set[str]:
+    risky: Set[str] = set()
+    local_modules = _zip_local_top_modules(zf)
+    for idx, path in enumerate(sorted(n for n in zf.namelist() if n.endswith(".py") and not n.endswith("/"))):
+        if idx >= 300:
+            break
+        try:
+            source = zf.read(path).decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        risky.update(_third_party_import_risks_in_source(source, local_modules))
+    return risky
+
+
+def _scan_directory_third_party_import_risks(dir_path: str) -> Set[str]:
+    risky: Set[str] = set()
+    local_modules = _directory_local_top_modules(dir_path)
+    base = Path(dir_path)
+    for idx, path in enumerate(sorted(base.rglob("*.py"))):
+        if idx >= 300:
+            break
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        risky.update(_third_party_import_risks_in_source(source, local_modules))
+    return risky
+
+
 def _add_runtime_risk_guidance(report: Report, findings: List[Tuple[str, str]]):
     for msg, hint in findings:
         report.add("WARNING", msg)
         report.add("INFO", f"Runtime compatibility hint: {hint}")
+
+
+def _add_third_party_import_guidance(report: Report, modules: Set[str]):
+    if not modules:
+        return
+    mods = sorted(modules)
+    sample = ", ".join(mods[:6])
+    more = f" (+{len(mods) - 6} more)" if len(mods) > 6 else ""
+    report.add(
+        "WARNING",
+        f"Detected potential third-party dependency import(s): {sample}{more}. Missing dependencies can cause 'ModuleNotFoundError' when enabling add-ons.",
+    )
+    report.add(
+        "INFO",
+        "Runtime compatibility hint: vendor required Python modules with the add-on, gate optional imports, or install a build explicitly packaged for Blender's bundled Python.",
+    )
 
 
 _NATIVE_BINARY_EXTS = (".pyd", ".so", ".dylib")
@@ -655,6 +785,7 @@ def _diagnose_single_file_addon(py_path: str, current_blender_version: Optional[
             report.add("OK", "Current Blender version satisfies single-file bl_info minimum")
 
     _add_runtime_risk_guidance(report, _runtime_risk_hits_in_source(source))
+    _add_third_party_import_guidance(report, _third_party_import_risks_in_source(source, local_modules={Path(py_path).stem}))
     return report
 
 
@@ -774,6 +905,7 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
                     report.add('ERROR', f"Current Blender version is lower than '{path}' bl_info['blender'] minimum.")
 
     _add_runtime_risk_guidance(report, _scan_directory_runtime_risks(dir_path))
+    _add_third_party_import_guidance(report, _scan_directory_third_party_import_risks(dir_path))
     _add_native_binary_guidance(report, _scan_directory_native_binaries(dir_path), manifest=manifest_for_native)
     return report
 
@@ -1082,6 +1214,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
                 _validate_manifest(report, manifest, current_blender_version=current_blender_version)
 
             _add_runtime_risk_guidance(report, _scan_zip_runtime_risks(zf))
+            _add_third_party_import_guidance(report, _scan_zip_third_party_import_risks(zf))
             _add_native_binary_guidance(report, _scan_zip_native_binaries(zf), manifest=manifest)
 
             if len(top_dirs) > 1:

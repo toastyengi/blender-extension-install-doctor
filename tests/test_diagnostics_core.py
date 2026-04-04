@@ -561,6 +561,34 @@ class DiagnoseZipTests(unittest.TestCase):
         self.assertTrue(any("Manifest platforms declared: windows-x64" in m for m in messages))
         self.assertFalse(any("manifest has no explicit 'platforms'" in m for m in messages))
 
+    def test_warns_for_unbundled_third_party_import_dependency(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import requests\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("third-party dependency import" in m for m in warnings))
+        self.assertTrue(any("requests" in m for m in warnings))
+
+    def test_does_not_warn_for_local_package_import(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import helper\n'
+                ),
+                "helper.py": "VALUE = 1\n",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("third-party dependency import" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()
