@@ -589,6 +589,33 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertFalse(any("third-party dependency import" in m for m in warnings))
 
+    def test_warns_for_missing_relative_import_target(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'from . import missing_tools\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("relative import reference" in m for m in warnings))
+
+    def test_does_not_warn_for_valid_relative_import_target(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'from . import tools\n'
+                ),
+                "my_addon/tools.py": "VALUE = 1\n",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("relative import reference" in m for m in warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

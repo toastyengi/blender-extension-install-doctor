@@ -389,6 +389,87 @@ def _directory_local_top_modules(dir_path: str) -> Set[str]:
     return out
 
 
+def _module_ref_exists_in_package(ref_parts: List[str], py_files: Set[str], package_dirs: Set[str]) -> bool:
+    if not ref_parts:
+        return False
+    ref = "/".join(ref_parts)
+    return (f"{ref}.py" in py_files) or (ref in package_dirs)
+
+
+def _collect_relative_import_misses(source: str, file_path: str, py_files: Set[str], package_dirs: Set[str]) -> Set[str]:
+    try:
+        tree = ast.parse(source)
+    except Exception:
+        return set()
+
+    misses: Set[str] = set()
+    file_parts = [p for p in file_path.split("/") if p]
+    parent_parts = file_parts[:-1]
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if not node.level or node.level <= 0:
+            continue
+
+        anchor_len = len(parent_parts) - (node.level - 1)
+        if anchor_len <= 0:
+            continue
+        anchor = parent_parts[:anchor_len]
+
+        if node.module:
+            target = anchor + [p for p in node.module.split(".") if p]
+            if not _module_ref_exists_in_package(target, py_files, package_dirs):
+                misses.add("/".join(target))
+        else:
+            for alias in node.names:
+                name = (alias.name or "").strip()
+                if not name or name == "*":
+                    continue
+                target = anchor + [p for p in name.split(".") if p]
+                if not _module_ref_exists_in_package(target, py_files, package_dirs):
+                    misses.add("/".join(target))
+
+    return misses
+
+
+def _scan_zip_relative_import_misses(zf: zipfile.ZipFile) -> Set[str]:
+    py_files = {n for n in zf.namelist() if n.endswith(".py") and not n.endswith("/")}
+    package_dirs = {n[: -len("/__init__.py")] for n in py_files if n.endswith("/__init__.py")}
+
+    misses: Set[str] = set()
+    for idx, path in enumerate(sorted(py_files)):
+        if idx >= 300:
+            break
+        try:
+            source = zf.read(path).decode("utf-8", errors="replace")
+        except Exception:
+            continue
+        misses.update(_collect_relative_import_misses(source, path, py_files, package_dirs))
+
+    return misses
+
+
+def _scan_directory_relative_import_misses(dir_path: str) -> Set[str]:
+    base = Path(dir_path)
+    py_paths = sorted([p for p in base.rglob("*.py") if p.is_file()])
+    py_files = {p.relative_to(base).as_posix() for p in py_paths}
+    package_dirs = {n[: -len("/__init__.py")] for n in py_files if n.endswith("/__init__.py")}
+
+    misses: Set[str] = set()
+    for idx, path in enumerate(py_paths):
+        if idx >= 300:
+            break
+        rel = path.relative_to(base).as_posix()
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        misses.update(_collect_relative_import_misses(source, rel, py_files, package_dirs))
+
+    return misses
+
+
 def _scan_zip_runtime_risks(zf: zipfile.ZipFile) -> List[Tuple[str, str]]:
     findings: List[Tuple[str, str]] = []
     seen = set()
@@ -473,6 +554,22 @@ def _add_third_party_import_guidance(report: Report, modules: Set[str]):
     report.add(
         "INFO",
         "Runtime compatibility hint: vendor required Python modules with the add-on, gate optional imports, or install a build explicitly packaged for Blender's bundled Python.",
+    )
+
+
+def _add_relative_import_guidance(report: Report, misses: Set[str]):
+    if not misses:
+        return
+    refs = sorted(misses)
+    sample = ", ".join(refs[:5])
+    more = f" (+{len(refs) - 5} more)" if len(refs) > 5 else ""
+    report.add(
+        "WARNING",
+        f"Detected relative import reference(s) that do not resolve inside this package: {sample}{more}. This often causes enable-time import errors.",
+    )
+    report.add(
+        "INFO",
+        "Runtime compatibility hint: ensure all 'from . ...' modules exist in the ZIP/folder and keep package structure intact when re-zipping.",
     )
 
 
@@ -786,6 +883,10 @@ def _diagnose_single_file_addon(py_path: str, current_blender_version: Optional[
 
     _add_runtime_risk_guidance(report, _runtime_risk_hits_in_source(source))
     _add_third_party_import_guidance(report, _third_party_import_risks_in_source(source, local_modules={Path(py_path).stem}))
+    _add_relative_import_guidance(
+        report,
+        _collect_relative_import_misses(source, Path(py_path).name, py_files={Path(py_path).name}, package_dirs=set()),
+    )
     return report
 
 
@@ -906,6 +1007,7 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
 
     _add_runtime_risk_guidance(report, _scan_directory_runtime_risks(dir_path))
     _add_third_party_import_guidance(report, _scan_directory_third_party_import_risks(dir_path))
+    _add_relative_import_guidance(report, _scan_directory_relative_import_misses(dir_path))
     _add_native_binary_guidance(report, _scan_directory_native_binaries(dir_path), manifest=manifest_for_native)
     return report
 
@@ -1215,6 +1317,7 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
 
             _add_runtime_risk_guidance(report, _scan_zip_runtime_risks(zf))
             _add_third_party_import_guidance(report, _scan_zip_third_party_import_risks(zf))
+            _add_relative_import_guidance(report, _scan_zip_relative_import_misses(zf))
             _add_native_binary_guidance(report, _scan_zip_native_binaries(zf), manifest=manifest)
 
             if len(top_dirs) > 1:
