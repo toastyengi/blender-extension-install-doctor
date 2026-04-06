@@ -450,6 +450,34 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("asyncio.run" in m and "module import" in m for m in warnings))
 
+    def test_flags_top_level_ensurepip_bootstrap_as_enable_blocking_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import ensurepip\n'
+                    'ensurepip.bootstrap()\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("ensurepip bootstrap" in m and "module import" in m for m in warnings))
+
+    def test_flags_top_level_subprocess_check_call_as_enable_blocking_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import subprocess\n'
+                    'subprocess.check_call(["python", "-m", "pip", "install", "requests"])\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("subprocess call" in m and "module import" in m for m in warnings))
+
     def test_flags_top_level_bpy_ops_call_as_context_risk(self):
         zpath = self._zip_with(
             {

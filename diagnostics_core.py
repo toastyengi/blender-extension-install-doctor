@@ -188,9 +188,12 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
         "subprocess.run": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
         "subprocess.call": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
         "subprocess.check_output": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
+        "subprocess.check_call": "Detected top-level subprocess call during module import. This can block Blender startup/enable flow.",
         "subprocess.Popen": "Detected top-level subprocess launch during module import. This may cause enable-time instability.",
         "thread.join": "Detected top-level thread join during module import. Waiting for threads at import time can freeze add-on enable.",
         "asyncio.run": "Detected top-level asyncio.run(...) call during module import. Long async startup tasks can block add-on enable.",
+        "ensurepip.bootstrap": "Detected top-level ensurepip bootstrap during module import. Installing packages at enable-time often freezes or fails in Blender's bundled Python.",
+        "pip.main": "Detected top-level pip install call during module import. Runtime dependency installs can fail or hang during add-on enable.",
     }
     hint = "Move blocking work into operators/timers/background tasks and keep module import + register() fast/non-blocking."
     context_hint = "Avoid bpy.ops calls during module import. Move context-dependent operator calls into register(), operators, or UI callbacks after Blender context is ready."
