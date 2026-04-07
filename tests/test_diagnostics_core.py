@@ -617,6 +617,20 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertFalse(any("third-party dependency import" in m for m in warnings))
 
+    def test_does_not_warn_for_vendored_dependency_inside_addon_tree(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import requests\n'
+                ),
+                "my_addon/vendor/requests/__init__.py": "__version__ = '0'\n",
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertFalse(any("third-party dependency import" in m and "requests" in m for m in warnings))
+
     def test_warns_for_missing_relative_import_target(self):
         zpath = self._zip_with(
             {

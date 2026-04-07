@@ -362,33 +362,46 @@ def _third_party_import_risks_in_source(source: str, local_modules: Set[str]) ->
 
 
 def _zip_local_top_modules(zf: zipfile.ZipFile) -> Set[str]:
+    """Collect likely importable module names bundled in the archive.
+
+    We include top-level names and nested package/module names so vendored
+    dependencies (e.g. addon/vendor/requests/__init__.py) are not
+    misclassified as missing third-party dependencies.
+    """
     out: Set[str] = set()
-    for n in zf.namelist():
-        if n.endswith("/"):
-            continue
+    py_files = [n for n in zf.namelist() if n.endswith(".py") and not n.endswith("/")]
+
+    for n in py_files:
         parts = [p for p in n.split("/") if p]
         if not parts:
             continue
-        top = parts[0]
-        if top.startswith("."):
-            continue
-        if top.endswith(".py"):
-            out.add(top[:-3])
-        else:
-            out.add(top)
+
+        stem = Path(parts[-1]).stem
+        if stem and stem != "__init__" and not stem.startswith("."):
+            out.add(stem)
+
+        for seg in parts[:-1]:
+            if seg and not seg.startswith("."):
+                out.add(seg)
+
     return out
 
 
 def _directory_local_top_modules(dir_path: str) -> Set[str]:
+    """Collect likely importable module names bundled in directory tree."""
     out: Set[str] = set()
     base = Path(dir_path)
-    for p in base.iterdir():
-        if p.name.startswith("."):
+
+    for p in base.rglob("*.py"):
+        if not p.is_file():
             continue
-        if p.is_file() and p.suffix == ".py":
+
+        if p.stem != "__init__" and not p.stem.startswith("."):
             out.add(p.stem)
-        else:
-            out.add(p.name)
+
+        rel_parts = [seg for seg in p.relative_to(base).parts[:-1] if seg and not str(seg).startswith(".")]
+        out.update(rel_parts)
+
     return out
 
 
