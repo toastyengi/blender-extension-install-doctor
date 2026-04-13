@@ -478,6 +478,35 @@ class DiagnoseZipTests(unittest.TestCase):
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("subprocess call" in m and "module import" in m for m in warnings))
 
+
+    def test_flags_top_level_os_system_as_enable_blocking_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import os\n'
+                    'os.system("python -m pip install requests")\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("os.system" in m and "module import" in m for m in warnings))
+
+    def test_flags_top_level_os_popen_as_enable_blocking_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import os\n'
+                    'os.popen("python -m pip install numpy")\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("os.popen" in m and "module import" in m for m in warnings))
+
     def test_flags_top_level_bpy_ops_call_as_context_risk(self):
         zpath = self._zip_with(
             {

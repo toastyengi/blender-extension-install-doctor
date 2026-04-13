@@ -194,6 +194,8 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
         "asyncio.run": "Detected top-level asyncio.run(...) call during module import. Long async startup tasks can block add-on enable.",
         "ensurepip.bootstrap": "Detected top-level ensurepip bootstrap during module import. Installing packages at enable-time often freezes or fails in Blender's bundled Python.",
         "pip.main": "Detected top-level pip install call during module import. Runtime dependency installs can fail or hang during add-on enable.",
+        "os.system": "Detected top-level shell command execution (os.system) during module import. External commands can block Blender startup/enable and fail unpredictably across systems.",
+        "os.popen": "Detected top-level shell command execution (os.popen) during module import. External commands can block Blender startup/enable and fail unpredictably across systems.",
     }
     hint = "Move blocking work into operators/timers/background tasks and keep module import + register() fast/non-blocking."
     context_hint = "Avoid bpy.ops calls during module import. Move context-dependent operator calls into register(), operators, or UI callbacks after Blender context is ready."
