@@ -610,7 +610,44 @@ def _scan_directory_native_binaries(dir_path: str) -> List[str]:
     return out
 
 
-def _add_native_binary_guidance(report: Report, binary_paths: List[str], manifest: Optional[dict] = None):
+def _python_abi_tag_to_version(tag: str) -> Optional[Tuple[int, int]]:
+    t = str(tag).strip()
+    if not t.isdigit() or len(t) < 2:
+        return None
+    if len(t) == 2:
+        return int(t[0]), int(t[1])
+    return int(t[0]), int(t[1:])
+
+
+def _extract_binary_python_abi_versions(binary_paths: List[str]) -> Set[Tuple[int, int]]:
+    found: Set[Tuple[int, int]] = set()
+    for p in binary_paths:
+        # Common wheel/native naming patterns:
+        #   module.cp311-win_amd64.pyd
+        #   module.cpython-311-x86_64-linux-gnu.so
+        #   module_cp310.pyd
+        for m in re.finditer(r"(?:cpython-|cp)(\d{2,3})", p, flags=re.IGNORECASE):
+            v = _python_abi_tag_to_version(m.group(1))
+            if v is not None:
+                found.add(v)
+    return found
+
+
+def _parse_python_mm(value: str) -> Optional[Tuple[int, int]]:
+    t = _parse_version_tuple(value)
+    if not t:
+        return None
+    if len(t) == 1:
+        return t[0], 0
+    return t[0], t[1]
+
+
+def _add_native_binary_guidance(
+    report: Report,
+    binary_paths: List[str],
+    manifest: Optional[dict] = None,
+    current_python_version: Optional[str] = None,
+):
     if not binary_paths:
         return
 
@@ -624,6 +661,24 @@ def _add_native_binary_guidance(report: Report, binary_paths: List[str], manifes
         "INFO",
         "Runtime compatibility hint: verify add-on build matches your OS/CPU and Blender Python ABI; if unsure, use a release explicitly built for your Blender version.",
     )
+
+    abi_versions = _extract_binary_python_abi_versions(binary_paths)
+    if abi_versions:
+        current_py = _parse_python_mm(current_python_version) if current_python_version else (sys.version_info.major, sys.version_info.minor)
+        if current_py is not None:
+            report.add("INFO", f"Current Python version (for ABI check): {current_py[0]}.{current_py[1]}")
+            supported = sorted(f"{maj}.{min_}" for maj, min_ in abi_versions)
+            if current_py not in abi_versions:
+                report.add(
+                    "WARNING",
+                    f"Bundled native module ABI tags target Python {', '.join(supported)}, but current Python is {current_py[0]}.{current_py[1]}. This often causes enable-time import errors on newer Blender/Python versions.",
+                )
+                report.add(
+                    "INFO",
+                    "Runtime compatibility hint: install an add-on build compiled for your Blender Python version, or use a pure-Python fallback release if available.",
+                )
+            else:
+                report.add("OK", f"Native module ABI tag matches current Python: {current_py[0]}.{current_py[1]}")
 
     if manifest is not None:
         platforms = manifest.get("platforms") if isinstance(manifest, dict) else None
@@ -930,7 +985,11 @@ def _find_legacy_single_file_addons_in_dir(root: str) -> List[Tuple[str, Optiona
     return out
 
 
-def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[str] = None) -> Report:
+def _diagnose_directory_addon(
+    dir_path: str,
+    current_blender_version: Optional[str] = None,
+    current_python_version: Optional[str] = None,
+) -> Report:
     report = Report()
     base = Path(dir_path)
 
@@ -1026,10 +1085,19 @@ def _diagnose_directory_addon(dir_path: str, current_blender_version: Optional[s
     _add_runtime_risk_guidance(report, _scan_directory_runtime_risks(dir_path))
     _add_third_party_import_guidance(report, _scan_directory_third_party_import_risks(dir_path))
     _add_relative_import_guidance(report, _scan_directory_relative_import_misses(dir_path))
-    _add_native_binary_guidance(report, _scan_directory_native_binaries(dir_path), manifest=manifest_for_native)
+    _add_native_binary_guidance(
+        report,
+        _scan_directory_native_binaries(dir_path),
+        manifest=manifest_for_native,
+        current_python_version=current_python_version,
+    )
     return report
 
-def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -> Report:
+def diagnose_zip(
+    zip_path: str,
+    current_blender_version: Optional[str] = None,
+    current_python_version: Optional[str] = None,
+) -> Report:
     report = Report()
 
     if not zip_path:
@@ -1041,7 +1109,11 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
         return report
 
     if os.path.isdir(zip_path):
-        return _diagnose_directory_addon(zip_path, current_blender_version=current_blender_version)
+        return _diagnose_directory_addon(
+            zip_path,
+            current_blender_version=current_blender_version,
+            current_python_version=current_python_version,
+        )
 
     lower_path = zip_path.lower()
     if lower_path.endswith(".py"):
@@ -1336,7 +1408,12 @@ def diagnose_zip(zip_path: str, current_blender_version: Optional[str] = None) -
             _add_runtime_risk_guidance(report, _scan_zip_runtime_risks(zf))
             _add_third_party_import_guidance(report, _scan_zip_third_party_import_risks(zf))
             _add_relative_import_guidance(report, _scan_zip_relative_import_misses(zf))
-            _add_native_binary_guidance(report, _scan_zip_native_binaries(zf), manifest=manifest)
+            _add_native_binary_guidance(
+                report,
+                _scan_zip_native_binaries(zf),
+                manifest=manifest,
+                current_python_version=current_python_version,
+            )
 
             if len(top_dirs) > 1:
                 report.add(

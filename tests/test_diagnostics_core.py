@@ -618,6 +618,29 @@ class DiagnoseZipTests(unittest.TestCase):
         self.assertTrue(any("Manifest platforms declared: windows-x64" in m for m in messages))
         self.assertFalse(any("manifest has no explicit 'platforms'" in m for m in messages))
 
+    def test_warns_for_native_binary_python_abi_mismatch(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n',
+                "a/bin/native.cp311-win_amd64.pyd": "binary",
+            }
+        )
+        report = diagnose_zip(str(zpath), current_python_version="3.13.0")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Current Python version (for ABI check): 3.13" in m for m in messages))
+        self.assertTrue(any("ABI tags target Python 3.11" in m for m in messages))
+
+    def test_confirms_native_binary_python_abi_match(self):
+        zpath = self._zip_with(
+            {
+                "blender_manifest.toml": 'id="a"\nname="A"\nversion="1.0.0"\nblender_version_min="4.2.0"\n',
+                "a/bin/native.cpython-313-x86_64-linux-gnu.so": "binary",
+            }
+        )
+        report = diagnose_zip(str(zpath), current_python_version="3.13.2")
+        messages = [e.message for e in report.entries]
+        self.assertTrue(any("Native module ABI tag matches current Python: 3.13" in m for m in messages))
+
     def test_warns_for_unbundled_third_party_import_dependency(self):
         zpath = self._zip_with(
             {
