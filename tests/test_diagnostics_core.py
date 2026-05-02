@@ -479,6 +479,20 @@ class DiagnoseZipTests(unittest.TestCase):
         self.assertTrue(any("subprocess call" in m and "module import" in m for m in warnings))
 
 
+    def test_flags_top_level_subprocess_run_pip_install_specific_risk(self):
+        zpath = self._zip_with(
+            {
+                "my_addon/__init__.py": (
+                    'bl_info = {"name": "A", "blender": (4, 0, 0)}\n'
+                    'import subprocess\n'
+                    'subprocess.run(["python", "-m", "pip", "install", "requests"], check=True)\n'
+                ),
+            }
+        )
+        report = diagnose_zip(str(zpath))
+        warnings = [e.message for e in report.entries if e.level == "WARNING"]
+        self.assertTrue(any("pip install command during module import" in m for m in warnings))
+
     def test_flags_top_level_os_system_as_enable_blocking_risk(self):
         zpath = self._zip_with(
             {
@@ -492,6 +506,7 @@ class DiagnoseZipTests(unittest.TestCase):
         report = diagnose_zip(str(zpath))
         warnings = [e.message for e in report.entries if e.level == "WARNING"]
         self.assertTrue(any("os.system" in m and "module import" in m for m in warnings))
+        self.assertTrue(any("pip install command during module import" in m for m in warnings))
 
     def test_flags_top_level_os_popen_as_enable_blocking_risk(self):
         zpath = self._zip_with(

@@ -178,6 +178,30 @@ def _call_name(node: ast.AST) -> Optional[str]:
 
 
 def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
+    def _stringish(node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        return None
+
+    def _extract_call_text(node: ast.Call) -> str:
+        parts: List[str] = []
+        for arg in node.args:
+            if isinstance(arg, (ast.List, ast.Tuple)):
+                for el in arg.elts:
+                    s = _stringish(el)
+                    if s:
+                        parts.append(s)
+            else:
+                s = _stringish(arg)
+                if s:
+                    parts.append(s)
+        for kw in node.keywords:
+            if kw.value is not None:
+                s = _stringish(kw.value)
+                if s:
+                    parts.append(s)
+        return " ".join(parts).lower()
+
     risky_calls = {
         "time.sleep": "Detected top-level 'time.sleep(...)' call during module import. This can freeze Blender while enabling the add-on.",
         "requests.get": "Detected top-level HTTP request call during module import. Network stalls can freeze Blender while enabling the add-on.",
@@ -214,9 +238,22 @@ def _top_level_blocking_call_hits(source: str) -> List[Tuple[str, str]]:
         for node in ast.walk(stmt):
             if isinstance(node, ast.Call):
                 name = _call_name(node.func)
+                call_text = _extract_call_text(node)
+                pip_installish = (
+                    "pip install" in call_text
+                    or ("-m" in call_text and "pip" in call_text and ("install" in call_text or "wheel" in call_text))
+                )
                 if name in risky_calls and name not in seen:
                     seen.add(name)
                     hits.append((risky_calls[name], hint))
+
+                pip_runner_calls = {"subprocess.run", "subprocess.call", "subprocess.check_call", "subprocess.check_output", "os.system", "os.popen"}
+                if name in pip_runner_calls and pip_installish and "pip.install.at_import" not in seen:
+                    seen.add("pip.install.at_import")
+                    hits.append((
+                        "Detected top-level pip install command during module import. This commonly causes add-on enable freezes/failures and can break on Blender's bundled Python.",
+                        "Ship dependencies with the add-on (vendored or wheels-per-platform) and move any installer logic into an explicit user-triggered operator, not import-time code.",
+                    ))
                 if name and name.startswith("bpy.ops.") and "bpy.ops.*" not in seen:
                     seen.add("bpy.ops.*")
                     hits.append((
